@@ -45,6 +45,14 @@ Each exception must include:
 
 ## Local Tooling
 
+Local history scans cover the complete current branch ancestry with
+`gitleaks detect --source . --redact --log-opts='--full-history HEAD'`, including
+merged parents. This scans the full history the branch can publish; it does not
+include unrelated worktree branches or local orchestration checkpoint refs.
+No detection rules or current-branch commits are excluded by this scope. CI pins
+Gitleaks 8.30.1 so its support for the repository's global allowlist syntax
+matches local verification.
+
 Install the local security tools when you need to reproduce CI:
 
 ```bash
@@ -60,12 +68,6 @@ upstream installers. Then run:
 ```bash
 make security
 ```
-
-Git secret checks scan the complete history reachable from `HEAD`, including
-inherited commits. This is the history published by a normal branch push.
-Private local recovery or orchestration checkpoint refs remain intact and are
-outside this publishing check. Scanner rules and existing historical-finding
-exceptions still apply to every reachable commit.
 
 For image scanning, build an image and pass its tag explicitly:
 

@@ -211,7 +211,13 @@ tenant or endpoint.
 
 Managed-identity tokens must carry the tenant, shared application ID audience,
 and assigned role. Relayna additionally matches monitoring client ID and, when
-supplied, immutable object ID against the enabled service binding.
+supplied, immutable object ID against the enabled exact service or project
+binding. Project discovery also filters each binding by its required role.
+Monitoring callers can discover projects with `GET /owner/v1/projects`, list
+current safe virtual-key metadata with
+`GET /owner/v1/projects/{project_id}/keys`, then pass a returned key UUID as
+`key_id` to the existing project usage endpoints. See the
+[bearer-token examples and response contract](entra-portal-and-owner-monitoring.md#discover-projects-keys-and-usage-with-a-bearer-token).
 
 ## Kubernetes ConfigMap and Secrets
 

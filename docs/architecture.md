@@ -181,7 +181,9 @@ The control listener exposes:
 - `/admin-ui/admin/*` APIs for operator actions.
 - `/admin-ui/auth/*` for the browser OIDC BFF protocol and portal session.
 - `/owner/v1/services/{service-name}/*` for exact service-scoped monitoring.
-- `/owner/v1/projects/{project-id}/*` for exact project-scoped monitoring.
+- `/owner/v1/projects` for authorized project discovery.
+- `/owner/v1/projects/{project-id}/*` for exact project-scoped monitoring and
+  read-only virtual-key metadata inventory.
 - `/admin-ui` for the embedded operator portal.
 
 Version `0.1.0` extends this control plane with scoped
@@ -202,6 +204,22 @@ Owner APIs resolve the signed-in portal member or workload identity and inject
 the exact authorized service or project into every store query. Browser OIDC
 tokens never reach JavaScript, while managed identities must match tenant,
 audience, application role, and an enabled exact resource binding.
+
+`GET /owner/v1/projects` preserves the portal membership response and also
+accepts verified owner Entra bearer tokens. Workload discovery queries only
+projects whose enabled exact bindings match the verified tenant, `appid` (or
+`azp`), optional bound object ID, and binding-required application role. Each
+workload result has role `viewer`; a valid monitoring identity without matching
+bindings receives an empty list. Administrator privileges do not grant an
+owner-scope fallback.
+
+`GET /owner/v1/projects/{project_id}/keys` requires the same exact project
+membership or workload binding as project usage APIs. Its dedicated PostgreSQL
+projection returns only key UUID, project UUID, name, safe prefix, disabled
+state, revocation timestamp, and expiry. It includes unused keys and reflects
+current key membership. A key moved between projects leaves historical usage
+attributed to each event's persisted project ID. No per-key authorization or
+key-management writes are added.
 
 Owner dashboards expose incident time series, filtered request events, and
 sanitized request details only within the exact service or project scope. A

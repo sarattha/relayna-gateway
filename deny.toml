@@ -44,6 +44,7 @@ multiple-versions = "warn"
 wildcards = "allow"
 highlight = "all"
 deny = [
+    { name = "libsqlite3-sys", version = "<0.39.0", reason = "Reject SQLite builds affected by RUSTSEC-2026-0459" },
     { name = "webpki-roots", version = "<0.26.11", reason = "Reject legacy embedded root data affected by RUSTSEC-2026-0381" },
     { name = "webpki-roots", version = ">0.26.11, <1.0.10", reason = "Only the 0.26.11 reexport wrapper or patched 1.x root data is allowed" },
 ]

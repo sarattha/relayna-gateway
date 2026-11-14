@@ -21,6 +21,7 @@ complete application, role, managed-identity, certificate, and issuer handoff.
 - BFF protocol: `/admin-ui/auth/*`
 - Administrator APIs: `/admin-ui/admin/*`
 - Service-owner API: `/owner/v1/services/{service_name}/*`
+- Project discovery: `GET /owner/v1/projects`
 - Project-owner API: `/owner/v1/projects/{project_id}/*`
 - Gateway request plane: `/v1/*` and `/services/*`
 
@@ -134,6 +135,80 @@ Relayna worker or another service calls provider routes. Those calls still need
 a Relayna virtual key and must pass route, model, budget, rate-limit, and
 guardrail policy. Do not assign both application roles to one identity unless
 the combined capability boundary is explicitly intended.
+
+## Discover projects, keys, and usage with a bearer token
+
+`GET /owner/v1/projects` accepts either an active portal session or the existing
+owner Entra bearer authentication. It returns a JSON array of
+`{"project": <existing project response>, "role": "viewer"}` for workloads;
+portal callers retain their exact membership roles and existing response shape.
+Only enabled project bindings matching the verified tenant ID, `appid` (falling
+back to `azp`), optional bound `oid`, and the binding's required application role
+are returned, once per project. Service bindings and administrator access do not
+add projects. A valid monitoring token with no matching project bindings returns
+`200 []`. Missing, invalid, or expired tokens retain the owner authentication
+errors; a missing required verifier role is denied. A supplied portal session
+cookie takes precedence and must itself be active.
+
+`GET /owner/v1/projects/{project_id}/keys` returns a JSON array containing only
+these stable fields, for keys currently belonging to the exact authorized
+project:
+
+| Field | JSON type | Meaning |
+| --- | --- | --- |
+| `id` | UUID string | Virtual-key ID; use as the usage query's `key_id` |
+| `project_id` | UUID string | Current project membership |
+| `name` | string or null | Operator-assigned key name |
+| `key_prefix` | string | Safe lookup prefix; cannot authenticate a request |
+| `disabled` | boolean | Whether the key is disabled |
+| `revoked_at` | timestamp or null | Revocation time, if revoked |
+| `expires_at` | timestamp or null | Expiry time; null means no expiry |
+
+The inventory includes unused, disabled, revoked, and expired keys. It returns
+`200 []` when an authorized project has no keys, ordered by creation time then
+key UUID. Raw secrets, verifier hashes, policy, guardrails, and admin-only
+metadata are excluded. Portal Owners and Viewers need exact project membership;
+workloads need the same enabled exact binding used by the usage endpoints.
+Unauthorized project access returns `403 insufficient_portal_access`. This API
+is read-only and adds no key-specific permission checks or key management.
+
+Acquire a token through the approved managed-identity or workload-identity
+credential flow for `api://<application-id>/.default`, with
+`gateway.monitor.read` assigned. The examples assume the resulting token is
+already in `OWNER_ACCESS_TOKEN`; keep shell tracing disabled and do not print
+or persist it.
+
+```bash
+GATEWAY_CONTROL_URL='https://gateway.example'
+
+# Discover only projects authorized for this monitoring identity.
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer ${OWNER_ACCESS_TOKEN}" \
+  "${GATEWAY_CONTROL_URL}/owner/v1/projects"
+
+# Choose a project UUID from that response and inventory its current keys.
+PROJECT_ID='<authorized-project-uuid>'
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer ${OWNER_ACCESS_TOKEN}" \
+  "${GATEWAY_CONTROL_URL}/owner/v1/projects/${PROJECT_ID}/keys"
+
+# Choose the key's id (not its prefix) and use the existing usage filters.
+KEY_ID='<virtual-key-uuid>'
+curl --fail --silent --show-error --get \
+  -H "Authorization: Bearer ${OWNER_ACCESS_TOKEN}" \
+  --data-urlencode "key_id=${KEY_ID}" \
+  "${GATEWAY_CONTROL_URL}/owner/v1/projects/${PROJECT_ID}/events"
+curl --fail --silent --show-error --get \
+  -H "Authorization: Bearer ${OWNER_ACCESS_TOKEN}" \
+  --data-urlencode "key_id=${KEY_ID}" \
+  "${GATEWAY_CONTROL_URL}/owner/v1/projects/${PROJECT_ID}/dashboard"
+```
+
+The route's project UUID always overrides any query `project_id`. Key inventory
+uses **current** membership, while usage uses **historical event-project**
+attribution. Moving a key does not move its earlier usage: keep known key UUIDs
+when querying historical events in an authorized project. Shared services do
+not widen project scope.
 
 ## Incident monitoring and request details
 

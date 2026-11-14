@@ -5,9 +5,10 @@ use gateway_core::{
         ManagedIdentityBinding, ManagedIdentityCreateRequest, ManagedIdentityPatchRequest,
         ManagedIdentityProjectBinding, ManagedIdentityProjectCreateRequest,
         ManagedIdentityProjectPatchRequest, MemberPatchRequest, MemberStatus, NewPortalSession,
-        OidcLoginTransaction, PortalAccessStore, PortalAdminBootstrapPolicy, PortalMember,
-        PortalMemberLogin, ProjectMembership, ProjectMembershipUpsertRequest, ServiceMemberRole,
-        ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession, PORTAL_ROLE_ADMIN,
+        OidcLoginTransaction, OwnerProjectKey, PortalAccessStore, PortalAdminBootstrapPolicy,
+        PortalMember, PortalMemberLogin, ProjectMembership, ProjectMembershipUpsertRequest,
+        ServiceMemberRole, ServiceMembership, ServiceMembershipUpsertRequest, StoredPortalSession,
+        PORTAL_ROLE_ADMIN,
     },
     admin::{
         normalize_key_name, AdminKeyCreate, AdminKeyOwnerType, AdminKeyPatch, AdminKeyResponse,
@@ -8440,6 +8441,72 @@ impl PortalAccessStore for PostgresStore {
         }))
     }
 
+    async fn workload_projects(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        token_roles: &[String],
+    ) -> GatewayResult<Vec<ProjectResponse>> {
+        sqlx::query(
+            r#"
+            SELECT p.id, p.name, p.created_at, p.updated_at,
+                ARRAY(
+                    SELECT service_name FROM project_service_links
+                    WHERE project_id = p.id ORDER BY service_name
+                ) AS service_names
+            FROM projects p
+            WHERE EXISTS (
+                SELECT 1 FROM managed_identity_project_bindings b
+                WHERE b.project_id = p.id
+                  AND b.tenant_id = $1 AND b.client_id = $2
+                  AND (b.object_id IS NULL OR b.object_id = $3)
+                  AND b.enabled = true
+                  AND b.required_role = ANY($4::text[])
+            )
+            ORDER BY p.name, p.id
+            "#,
+        )
+        .bind(tenant_id)
+        .bind(client_id)
+        .bind(object_id)
+        .bind(token_roles)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?
+        .into_iter()
+        .map(project_response_from_row)
+        .collect()
+    }
+
+    async fn list_project_keys(&self, project_id: Uuid) -> GatewayResult<Vec<OwnerProjectKey>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, project_id, name, key_prefix, disabled, revoked_at, expires_at
+            FROM api_keys WHERE project_id = $1
+            ORDER BY created_at, id
+            "#,
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| GatewayError::StoreUnavailable)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(OwnerProjectKey {
+                    id: row.try_get("id")?,
+                    project_id: row.try_get("project_id")?,
+                    name: row.try_get("name")?,
+                    key_prefix: row.try_get("key_prefix")?,
+                    disabled: row.try_get("disabled")?,
+                    revoked_at: row.try_get("revoked_at")?,
+                    expires_at: row.try_get("expires_at")?,
+                })
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()
+            .map_err(|_| GatewayError::StoreUnavailable)
+    }
+
     async fn workload_project_binding(
         &self,
         tenant_id: &str,
@@ -9217,6 +9284,205 @@ mod tests {
 
     fn deserialize<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
         serde_json::from_value(value).expect("deserialize test request")
+    }
+
+    #[tokio::test]
+    async fn owner_discovery_queries_exact_bindings_and_current_project_keys() {
+        let Some(store) = dependency_backed_store().await else {
+            eprintln!("skipping owner discovery PostgreSQL coverage: DATABASE_URL is not set");
+            return;
+        };
+        let suffix = Uuid::new_v4().simple().to_string();
+        let tenant = format!("discovery-tenant-{suffix}");
+        let client = format!("discovery-client-{suffix}");
+        let object = format!("discovery-object-{suffix}");
+        let roles = vec![gateway_core::OWNER_WORKLOAD_ROLE.to_owned()];
+        let mut projects = Vec::new();
+        for label in [
+            "allowed",
+            "optional-object",
+            "tenant",
+            "client",
+            "object",
+            "disabled",
+            "role",
+            "unbound",
+        ] {
+            let project = store
+                .create_project(ProjectCreateRequest {
+                    name: format!("{label}-{suffix}"),
+                })
+                .await
+                .unwrap();
+            if label != "unbound" {
+                store
+                    .create_managed_identity_project(ManagedIdentityProjectCreateRequest {
+                        tenant_id: if label == "tenant" {
+                            format!("other-{tenant}")
+                        } else {
+                            tenant.clone()
+                        },
+                        client_id: if label == "client" {
+                            format!("other-{client}")
+                        } else {
+                            client.clone()
+                        },
+                        object_id: match label {
+                            "optional-object" => None,
+                            "object" => Some(format!("other-{object}")),
+                            _ => Some(object.clone()),
+                        },
+                        display_name: format!("Monitor {label}"),
+                        project_id: project.id,
+                        required_role: if label == "role" {
+                            "additional.monitor.role".into()
+                        } else {
+                            roles[0].clone()
+                        },
+                        enabled: label != "disabled",
+                    })
+                    .await
+                    .unwrap();
+            }
+            projects.push(project);
+        }
+        let discovered = store
+            .workload_projects(&tenant, &client, Some(&object), &roles)
+            .await
+            .unwrap();
+        assert_eq!(discovered, projects[..2]);
+        for (tenant, client, object, roles) in [
+            (
+                tenant.as_str(),
+                "unbound-client",
+                Some(object.as_str()),
+                roles.as_slice(),
+            ),
+            (
+                "unbound-tenant",
+                client.as_str(),
+                Some(object.as_str()),
+                roles.as_slice(),
+            ),
+            (tenant.as_str(), client.as_str(), Some(object.as_str()), &[]),
+        ] {
+            assert!(store
+                .workload_projects(tenant, client, object, roles)
+                .await
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(
+            store
+                .workload_projects(&tenant, &client, None, &roles)
+                .await
+                .unwrap(),
+            vec![projects[1].clone()]
+        );
+        assert_eq!(
+            store
+                .workload_projects(&tenant, &client, Some("unbound-object"), &roles)
+                .await
+                .unwrap(),
+            vec![projects[1].clone()]
+        );
+        let mut both_roles = roles.clone();
+        both_roles.push("additional.monitor.role".into());
+        let with_role = store
+            .workload_projects(&tenant, &client, Some(&object), &both_roles)
+            .await
+            .unwrap();
+        assert_eq!(with_role.len(), 3);
+        assert!(with_role.iter().any(|p| p.id == projects[6].id));
+        // Exact authorization and discovery must agree for every candidate project.
+        for project in &projects {
+            assert_eq!(
+                store
+                    .workload_project_binding(&tenant, &client, Some(&object), project.id, &roles)
+                    .await
+                    .unwrap()
+                    .is_some(),
+                discovered.iter().any(|p| p.id == project.id)
+            );
+        }
+        let now = chrono::Utc::now();
+        let mut key_ids = Vec::new();
+        for (index, project_id) in [projects[0].id, projects[0].id, projects[7].id]
+            .into_iter()
+            .enumerate()
+        {
+            let key_id = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO api_keys (id, project_id, owner_type, key_prefix, key_hash, name, disabled, revoked_at, expires_at) VALUES ($1, $2, 'project', $3, $4, $5, $6, $7, $8)"
+            )
+            .bind(key_id).bind(project_id).bind(format!("rk_live_metadata_{index}_{suffix}"))
+            .bind("metadata-only-test-verifier").bind(if index == 0 { Some("Unused key") } else { None })
+            .bind(index == 1).bind(if index == 1 { Some(now) } else { None })
+            .bind(if index == 1 { Some(now - Duration::days(1)) } else { None })
+            .execute(store.pool()).await.unwrap();
+            key_ids.push(key_id);
+        }
+        // No usage or policy row exists for these keys: inventory must still contain them.
+        let keys = store.list_project_keys(projects[0].id).await.unwrap();
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].id, key_ids[0]);
+        assert_eq!(keys[0].name.as_deref(), Some("Unused key"));
+        assert!(!keys[0].disabled);
+        assert_eq!(keys[0].revoked_at, None);
+        assert_eq!(keys[0].expires_at, None);
+        assert_eq!(keys[1].id, key_ids[1]);
+        assert!(keys[1].disabled);
+        assert!(keys[1].revoked_at.is_some());
+        assert!(keys[1].expires_at.unwrap() < now);
+        assert!(keys.iter().all(|key| key.project_id == projects[0].id));
+        let encoded = serde_json::to_value(&keys).unwrap();
+        assert_eq!(
+            encoded[0]
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec![
+                "disabled",
+                "expires_at",
+                "id",
+                "key_prefix",
+                "name",
+                "project_id",
+                "revoked_at"
+            ]
+        );
+        sqlx::query("UPDATE api_keys SET project_id = $2 WHERE id = $1")
+            .bind(key_ids[0])
+            .bind(projects[7].id)
+            .execute(store.pool())
+            .await
+            .unwrap();
+        assert_eq!(
+            store.list_project_keys(projects[0].id).await.unwrap().len(),
+            1
+        );
+        assert_eq!(
+            store.list_project_keys(projects[7].id).await.unwrap().len(),
+            2
+        );
+        assert!(store
+            .list_project_keys(projects[1].id)
+            .await
+            .unwrap()
+            .is_empty());
+        sqlx::query("DELETE FROM api_keys WHERE id = ANY($1)")
+            .bind(&key_ids)
+            .execute(store.pool())
+            .await
+            .unwrap();
+        let project_ids = projects.iter().map(|p| p.id).collect::<Vec<_>>();
+        sqlx::query("DELETE FROM projects WHERE id = ANY($1)")
+            .bind(&project_ids)
+            .execute(store.pool())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

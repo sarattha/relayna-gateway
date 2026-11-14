@@ -443,6 +443,10 @@ fn router_with_state_and_admission(
         .route("/owner/v1/projects", get(owner_projects))
         .route("/owner/v1/projects/{project_id}", get(owner_project))
         .route(
+            "/owner/v1/projects/{project_id}/keys",
+            get(owner_project_keys),
+        )
+        .route(
             "/owner/v1/projects/{project_id}/dashboard",
             get(owner_project_dashboard),
         )
@@ -2297,6 +2301,34 @@ struct OwnerProjectBody {
 }
 
 async fn owner_projects(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if cookie_value(&headers, PORTAL_SESSION_COOKIE).is_none() {
+        let (identity, client_id) = match require_owner_project_identity(&state, &headers).await {
+            Ok(identity) => identity,
+            Err(response) => return response,
+        };
+        return match state
+            .store
+            .workload_projects(
+                &identity.tenant_id,
+                &client_id,
+                identity.object_id.as_deref(),
+                &identity.roles,
+            )
+            .await
+        {
+            Ok(projects) => Json(
+                projects
+                    .into_iter()
+                    .map(|project| OwnerProjectBody {
+                        project,
+                        role: ServiceMemberRole::Viewer,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .into_response(),
+            Err(error) => error_response(&headers, error),
+        };
+    }
     let session = match require_active_portal_session(&state, &headers).await {
         Ok(session) => session,
         Err(response) => return response,
@@ -2321,6 +2353,20 @@ async fn owner_projects(State(state): State<AppState>, headers: HeaderMap) -> Re
         }
     }
     Json(projects).into_response()
+}
+
+async fn owner_project_keys(
+    State(state): State<AppState>,
+    Path(project_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_owner_project_access(&state, &headers, project_id).await {
+        return response;
+    }
+    match state.store.list_project_keys(project_id).await {
+        Ok(keys) => Json(keys).into_response(),
+        Err(error) => error_response(&headers, error),
+    }
 }
 
 async fn owner_project(
@@ -6445,6 +6491,62 @@ async fn require_owner_service_access(
     clippy::result_large_err,
     reason = "authorization helpers return Axum responses directly"
 )]
+async fn require_owner_project_identity(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(gateway_core::EntraIdentityContext, String), Response> {
+    let Some(verifier) = state.owner_entra_verifier.as_ref() else {
+        authorization_debug(
+            headers,
+            "owner_project",
+            "managed_identity",
+            "rejected",
+            "owner_entra_verifier_disabled",
+            serde_json::Value::Null,
+        );
+        return Err(error_response(
+            headers,
+            GatewayError::MissingEntraAuthorization,
+        ));
+    };
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+    let request_id = request_id_from_headers(headers);
+    let identity = match verifier
+        .verify_authorization_with_context(
+            authorization,
+            Utc::now(),
+            EntraAuthDebugContext::new("owner_project", Some(&request_id)),
+        )
+        .await
+    {
+        Ok(identity) => identity,
+        Err(error) => return Err(error_response(headers, error)),
+    };
+    let Some(client_id) = identity
+        .app_id
+        .as_deref()
+        .or(identity.authorized_party.as_deref())
+    else {
+        authorization_debug(
+            headers,
+            "owner_project",
+            "client_identity",
+            "rejected",
+            "appid_or_azp_missing",
+            serde_json::json!({"identity": authorization_debug_identity(&identity)}),
+        );
+        return Err(error_response(headers, GatewayError::InvalidEntraToken));
+    };
+    let client_id = client_id.to_owned();
+    Ok((identity, client_id))
+}
+
+#[expect(
+    clippy::result_large_err,
+    reason = "authorization helpers return Axum responses directly"
+)]
 async fn require_owner_project_access(
     state: &AppState,
     headers: &HeaderMap,
@@ -6503,55 +6605,12 @@ async fn require_owner_project_access(
         };
     }
 
-    let Some(verifier) = state.owner_entra_verifier.as_ref() else {
-        authorization_debug(
-            headers,
-            "owner_project",
-            "managed_identity",
-            "rejected",
-            "owner_entra_verifier_disabled",
-            serde_json::Value::Null,
-        );
-        return Err(error_response(
-            headers,
-            GatewayError::MissingEntraAuthorization,
-        ));
-    };
-    let authorization = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok());
-    let request_id = request_id_from_headers(headers);
-    let identity = match verifier
-        .verify_authorization_with_context(
-            authorization,
-            Utc::now(),
-            EntraAuthDebugContext::new("owner_project", Some(&request_id)),
-        )
-        .await
-    {
-        Ok(identity) => identity,
-        Err(error) => return Err(error_response(headers, error)),
-    };
-    let Some(client_id) = identity
-        .app_id
-        .as_deref()
-        .or(identity.authorized_party.as_deref())
-    else {
-        authorization_debug(
-            headers,
-            "owner_project",
-            "client_identity",
-            "rejected",
-            "appid_or_azp_missing",
-            serde_json::json!({"identity": authorization_debug_identity(&identity)}),
-        );
-        return Err(error_response(headers, GatewayError::InvalidEntraToken));
-    };
+    let (identity, client_id) = require_owner_project_identity(state, headers).await?;
     match state
         .store
         .workload_project_binding(
             &identity.tenant_id,
-            client_id,
+            &client_id,
             identity.object_id.as_deref(),
             project_id,
             &identity.roles,
@@ -7646,6 +7705,7 @@ mod tests {
         managed_identities: Arc<Mutex<Vec<gateway_core::ManagedIdentityBinding>>>,
         managed_identity_projects: Arc<Mutex<Vec<gateway_core::ManagedIdentityProjectBinding>>>,
         projects: Arc<Mutex<Vec<ProjectResponse>>>,
+        project_keys: Arc<Mutex<Vec<gateway_core::OwnerProjectKey>>>,
         oidc_transactions: Arc<Mutex<Vec<OidcLoginTransaction>>>,
         portal_sessions: Arc<Mutex<Vec<NewPortalSession>>>,
         postgres_ready: bool,
@@ -8215,6 +8275,54 @@ mod tests {
                             .any(|role| role == &identity.required_role)
                 })
                 .cloned())
+        }
+
+        async fn workload_projects(
+            &self,
+            tenant_id: &str,
+            client_id: &str,
+            object_id: Option<&str>,
+            token_roles: &[String],
+        ) -> GatewayResult<Vec<ProjectResponse>> {
+            if self.store_fault == Some("workload_projects") {
+                return Err(GatewayError::StoreUnavailable);
+            }
+            let mut projects = Vec::new();
+            let candidates = self.projects.lock().expect("lock poisoned").clone();
+            for project in candidates {
+                if self
+                    .workload_project_binding(
+                        tenant_id,
+                        client_id,
+                        object_id,
+                        project.id,
+                        token_roles,
+                    )
+                    .await?
+                    .is_some()
+                {
+                    projects.push(project);
+                }
+            }
+            projects.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
+            Ok(projects)
+        }
+
+        async fn list_project_keys(
+            &self,
+            project_id: Uuid,
+        ) -> GatewayResult<Vec<gateway_core::OwnerProjectKey>> {
+            if self.store_fault == Some("list_project_keys") {
+                return Err(GatewayError::StoreUnavailable);
+            }
+            Ok(self
+                .project_keys
+                .lock()
+                .expect("lock poisoned")
+                .iter()
+                .filter(|key| key.project_id == project_id)
+                .cloned()
+                .collect())
         }
 
         async fn workload_project_binding(
@@ -10554,6 +10662,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -10937,6 +11046,16 @@ mod tests {
                 "member_project_role",
                 Method::GET,
                 "/owner/v1/projects/00000000-0000-0000-0000-000000000001",
+            ),
+            (
+                "list_project_memberships",
+                Method::GET,
+                "/owner/v1/projects",
+            ),
+            (
+                "member_project_role",
+                Method::GET,
+                "/owner/v1/projects/00000000-0000-0000-0000-000000000001/keys",
             ),
             (
                 "delete_portal_session",
@@ -11850,6 +11969,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -12800,6 +12920,419 @@ mod tests {
         );
     }
 
+    fn discovery_project(store: &MemoryStore, name: &str) -> ProjectResponse {
+        let project = ProjectResponse {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            service_names: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        store.projects.lock().unwrap().push(project.clone());
+        project
+    }
+
+    fn discovery_binding(project_id: Uuid) -> gateway_core::ManagedIdentityProjectBinding {
+        gateway_core::ManagedIdentityProjectBinding {
+            id: Uuid::new_v4(),
+            tenant_id: "discovery-tenant".into(),
+            client_id: "discovery-client".into(),
+            object_id: Some("discovery-object".into()),
+            display_name: "Project monitor".into(),
+            project_id,
+            required_role: gateway_core::OWNER_WORKLOAD_ROLE.into(),
+            enabled: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn discovery_key(project_id: Uuid) -> gateway_core::OwnerProjectKey {
+        gateway_core::OwnerProjectKey {
+            id: Uuid::new_v4(),
+            project_id,
+            name: Some("Unused monitor key".into()),
+            key_prefix: "rk_live_metadata".into(),
+            disabled: true,
+            revoked_at: Some(Utc::now() - ChronoDuration::hours(1)),
+            expires_at: Some(Utc::now() - ChronoDuration::days(1)),
+        }
+    }
+
+    #[tokio::test]
+    async fn owner_project_discovery_verifies_jwts_and_filters_exact_bindings() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        // Fresh signing material and a local JWKS exercise real verification, including expiry.
+        let rsa = openssl::rsa::Rsa::generate(2048).unwrap();
+        let jwks = serde_json::json!({"keys": [{
+            "kty": "RSA", "kid": "discovery-test", "use": "sig", "alg": "RS256",
+            "n": URL_SAFE_NO_PAD.encode(rsa.n().to_vec()),
+            "e": URL_SAFE_NO_PAD.encode(rsa.e().to_vec()),
+        }]});
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", listener.local_addr().unwrap());
+        let discovery = serde_json::json!({"issuer": issuer, "jwks_uri": format!("{issuer}/jwks")});
+        let issuer_app = Router::new()
+            .route("/discovery", get(move || async { Json(discovery) }))
+            .route("/jwks", get(move || async { Json(jwks) }));
+        let issuer_task =
+            tokio::spawn(async move { axum::serve(listener, issuer_app).await.unwrap() });
+        let signing_key =
+            jsonwebtoken::EncodingKey::from_rsa_pem(&rsa.private_key_to_pem().unwrap()).unwrap();
+        let sign = |claims: &Value| {
+            let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+            header.kid = Some("discovery-test".into());
+            jsonwebtoken::encode(&header, claims, &signing_key).unwrap()
+        };
+        let claims = serde_json::json!({
+            "iss": issuer, "aud": "discovery-api", "tid": "discovery-tenant", "ver": "2.0",
+            "azp": "discovery-client", "oid": "discovery-object",
+            "roles": [gateway_core::OWNER_WORKLOAD_ROLE],
+            "exp": (Utc::now() + ChronoDuration::hours(1)).timestamp(),
+            "nbf": (Utc::now() - ChronoDuration::hours(2)).timestamp(),
+        });
+        let store = default_store();
+        let allowed = discovery_project(&store, "Allowed");
+        let unbound_object = discovery_project(&store, "Optional object");
+        let other = discovery_project(&store, "Other");
+        let mut bindings = vec![discovery_binding(allowed.id)];
+        let mut optional = discovery_binding(unbound_object.id);
+        optional.object_id = None;
+        bindings.push(optional);
+        for mismatch in ["tenant", "client", "object", "disabled", "role"] {
+            let project = discovery_project(&store, mismatch);
+            let mut binding = discovery_binding(project.id);
+            match mismatch {
+                "tenant" => binding.tenant_id = "other-tenant".into(),
+                "client" => binding.client_id = "other-client".into(),
+                "object" => binding.object_id = Some("other-object".into()),
+                "disabled" => binding.enabled = false,
+                "role" => binding.required_role = "additional.monitor.role".into(),
+                _ => unreachable!(),
+            }
+            bindings.push(binding);
+        }
+        *store.managed_identity_projects.lock().unwrap() = bindings;
+        let key = discovery_key(allowed.id);
+        *store.project_keys.lock().unwrap() = vec![key.clone(), discovery_key(other.id)];
+        let mut state = test_state(store.clone());
+        state.owner_entra_verifier = Some(Arc::new(
+            EntraJwtVerifier::new(EntraAuthConfig {
+                tenant_id: "discovery-tenant".into(),
+                audience: "discovery-api".into(),
+                issuer: issuer.clone(),
+                oidc_discovery_url: format!("{issuer}/discovery"),
+                required_scope: None,
+                required_role: Some(gateway_core::OWNER_WORKLOAD_ROLE.into()),
+                allowed_groups: vec![],
+                accepted_algorithms: vec!["RS256".into()],
+                relayna_key_header: gateway_core::ENTRA_DEFAULT_RELAYNA_KEY_HEADER.into(),
+                jwks_cache_ttl_seconds: 300,
+                clock_skew_seconds: 0,
+            })
+            .unwrap(),
+        ));
+        let app = router_with_state(state.clone());
+        let token = sign(&claims);
+        let response = admin_get(app.clone(), "/owner/v1/projects", Some(&token)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let projects = response_json(response).await;
+        assert_eq!(
+            projects,
+            serde_json::json!([
+                {"project": allowed, "role": "viewer"},
+                {"project": unbound_object, "role": "viewer"},
+            ])
+        );
+        let keys_path = format!("/owner/v1/projects/{}/keys", allowed.id);
+        let response = admin_get(app.clone(), &keys_path, Some(&token)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response_json(response).await, serde_json::json!([key]));
+        let empty_keys = admin_get(
+            app.clone(),
+            &format!("/owner/v1/projects/{}/keys", unbound_object.id),
+            Some(&token),
+        )
+        .await;
+        assert_eq!(response_json(empty_keys).await, serde_json::json!([]));
+        for suffix in ["", "/keys"] {
+            let response = admin_get(
+                app.clone(),
+                &format!("/owner/v1/projects/{}{suffix}", other.id),
+                Some(&token),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(
+                response_json(response).await["error"]["code"],
+                "insufficient_portal_access"
+            );
+        }
+        for (claim, value, expected) in [
+            ("azp", serde_json::json!("unbound-client"), StatusCode::OK),
+            ("oid", serde_json::json!("other-object"), StatusCode::OK),
+            (
+                "tid",
+                serde_json::json!("other-tenant"),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "roles",
+                serde_json::json!(["gateway.invoke"]),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                "exp",
+                serde_json::json!((Utc::now() - ChronoDuration::hours(1)).timestamp()),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                "aud",
+                serde_json::json!("wrong-audience"),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            let mut changed = claims.clone();
+            changed[claim] = value;
+            let changed_token = sign(&changed);
+            let response = admin_get(app.clone(), "/owner/v1/projects", Some(&changed_token)).await;
+            assert_eq!(response.status(), expected, "{claim}");
+            if claim == "azp" {
+                assert_eq!(response_json(response).await, serde_json::json!([]));
+            } else if claim == "oid" {
+                let rows = response_json(response).await;
+                assert_eq!(rows.as_array().unwrap().len(), 2); // optional oid and exact other-object binding
+                assert!(rows
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|row| row["project"]["id"] != allowed.id.to_string()));
+            }
+            let response = admin_get(app.clone(), &keys_path, Some(&changed_token)).await;
+            assert_eq!(
+                response.status(),
+                if expected == StatusCode::OK {
+                    StatusCode::FORBIDDEN
+                } else {
+                    expected
+                },
+                "keys {claim}"
+            );
+        }
+        let mut appid_claims = claims.clone();
+        appid_claims.as_object_mut().unwrap().remove("azp");
+        appid_claims["appid"] = serde_json::json!("discovery-client");
+        assert_eq!(
+            response_json(
+                admin_get(
+                    app.clone(),
+                    "/owner/v1/projects",
+                    Some(&sign(&appid_claims))
+                )
+                .await
+            )
+            .await,
+            projects
+        );
+        let mut no_client = claims.clone();
+        no_client.as_object_mut().unwrap().remove("azp");
+        let invalid_identity = sign(&no_client);
+        let mut jwt_header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        jwt_header.kid = Some("discovery-test".into());
+        let other_signer = openssl::rsa::Rsa::generate(2048).unwrap();
+        let forged = jsonwebtoken::encode(
+            &jwt_header,
+            &claims,
+            &jsonwebtoken::EncodingKey::from_rsa_pem(&other_signer.private_key_to_pem().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        for path in ["/owner/v1/projects", &keys_path] {
+            for token in [
+                None,
+                Some("malformed"),
+                Some(TEST_OPERATOR_TOKEN),
+                Some(&forged),
+                Some(&invalid_identity),
+            ] {
+                assert_eq!(
+                    admin_get(app.clone(), path, token).await.status(),
+                    StatusCode::UNAUTHORIZED
+                );
+            }
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(path)
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .header(header::COOKIE, format!("{PORTAL_SESSION_COOKIE}=invalid"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        for fault in ["workload_projects", "list_project_keys"] {
+            let mut failing = store.clone();
+            failing.store_fault = Some(fault);
+            state.store = Arc::new(failing);
+            let response = admin_get(
+                router_with_state(state.clone()),
+                if fault == "workload_projects" {
+                    "/owner/v1/projects"
+                } else {
+                    &keys_path
+                },
+                Some(&token),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+            assert_eq!(
+                response_json(response).await["error"]["code"],
+                "store_unavailable"
+            );
+        }
+        store.managed_identity_projects.lock().unwrap().clear();
+        assert_eq!(
+            response_json(admin_get(app, "/owner/v1/projects", Some(&token)).await).await,
+            serde_json::json!([])
+        );
+        issuer_task.abort();
+    }
+
+    #[tokio::test]
+    async fn owner_project_keys_preserve_portal_memberships_and_historical_usage() {
+        let store = default_store();
+        let allowed = discovery_project(&store, "Member project");
+        let other = discovery_project(&store, "Other project");
+        let key = discovery_key(allowed.id);
+        *store.project_keys.lock().unwrap() = vec![key.clone(), discovery_key(other.id)];
+        let member = active_portal_member(false);
+        store
+            .project_memberships
+            .lock()
+            .unwrap()
+            .push(ProjectMembership {
+                member_id: member.id,
+                project_id: allowed.id,
+                role: ServiceMemberRole::Owner,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        let (session, csrf) = seed_portal_session(&store, member);
+        let app = router_with_state(test_state(store.clone()));
+        let response = portal_request(
+            app.clone(),
+            Method::GET,
+            "/owner/v1/projects",
+            &session,
+            &csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(response).await,
+            serde_json::json!([{"project": allowed, "role": "owner"}])
+        );
+        let path = format!("/owner/v1/projects/{}/keys", allowed.id);
+        let response =
+            portal_request(app.clone(), Method::GET, &path, &session, &csrf, None, "").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(body, serde_json::json!([key]));
+        let fields = body[0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            fields,
+            vec![
+                "disabled",
+                "expires_at",
+                "id",
+                "key_prefix",
+                "name",
+                "project_id",
+                "revoked_at"
+            ]
+        );
+        store.project_memberships.lock().unwrap()[0].role = ServiceMemberRole::Viewer;
+        let response =
+            portal_request(app.clone(), Method::GET, &path, &session, &csrf, None, "").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        for status in [MemberStatus::Pending, MemberStatus::Blocked] {
+            let mut member = active_portal_member(false);
+            member.status = status;
+            let (session, csrf) = seed_portal_session(&store, member);
+            for path in ["/owner/v1/projects", path.as_str()] {
+                assert_eq!(
+                    portal_request(app.clone(), Method::GET, path, &session, &csrf, None, "")
+                        .await
+                        .status(),
+                    StatusCode::FORBIDDEN
+                );
+            }
+        }
+        // Key movement changes discovery, while historical usage retains its original project.
+        let mut event = test_usage_event_for_project("req-discovery-history", allowed.id);
+        event.key_id = key.id;
+        store.events.lock().unwrap().push(event);
+        store.project_keys.lock().unwrap()[0].project_id = other.id;
+        let response =
+            portal_request(app.clone(), Method::GET, &path, &session, &csrf, None, "").await;
+        assert_eq!(response_json(response).await, serde_json::json!([]));
+        let response = portal_request(
+            app.clone(),
+            Method::GET,
+            &format!(
+                "/owner/v1/projects/{}/events?key_id={}&project_id={}",
+                allowed.id, key.id, other.id
+            ),
+            &session,
+            &csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response_json(response).await["rows"][0]["request_id"],
+            "req-discovery-history"
+        );
+        let admin = active_portal_member(true);
+        let (admin_session, admin_csrf) = seed_portal_session(&store, admin);
+        for (session, csrf) in [(&session, &csrf), (&admin_session, &admin_csrf)] {
+            let response = portal_request(
+                app.clone(),
+                Method::GET,
+                &format!("/owner/v1/projects/{}/keys", other.id),
+                session,
+                csrf,
+                None,
+                "",
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+        let response = portal_request(
+            app,
+            Method::GET,
+            "/owner/v1/projects",
+            &admin_session,
+            &admin_csrf,
+            None,
+            "",
+        )
+        .await;
+        assert_eq!(response_json(response).await, serde_json::json!([]));
+    }
+
     #[tokio::test]
     async fn development_oidc_drives_browser_and_workload_authentication_end_to_end() {
         let (oidc, issuer) = start_development_oidc().await;
@@ -13478,6 +14011,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -13693,6 +14227,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: false,
@@ -13730,6 +14265,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -13773,6 +14309,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14122,6 +14659,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14173,6 +14711,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14344,6 +14883,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14387,6 +14927,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14471,6 +15012,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14520,6 +15062,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14575,6 +15118,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14728,6 +15272,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -14797,6 +15342,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -15515,6 +16061,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -15610,6 +16157,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -16076,6 +16624,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -16384,6 +16933,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -16483,6 +17033,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -16543,6 +17094,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,
@@ -16639,6 +17191,7 @@ mod tests {
             managed_identities: Arc::new(Mutex::new(Vec::new())),
             managed_identity_projects: Arc::new(Mutex::new(Vec::new())),
             projects: Arc::new(Mutex::new(Vec::new())),
+            project_keys: Arc::new(Mutex::new(Vec::new())),
             oidc_transactions: Arc::new(Mutex::new(Vec::new())),
             portal_sessions: Arc::new(Mutex::new(Vec::new())),
             postgres_ready: true,

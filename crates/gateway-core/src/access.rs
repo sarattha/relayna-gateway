@@ -1,4 +1,4 @@
-use crate::{EntraIdentityContext, GatewayError, GatewayResult};
+use crate::{EntraIdentityContext, GatewayError, GatewayResult, ProjectResponse};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -357,6 +357,18 @@ pub struct OwnerServiceSummary {
     pub route_pattern: String,
 }
 
+/// Read-only current project key membership. Deliberately excludes secret and policy material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OwnerProjectKey {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: Option<String>,
+    pub key_prefix: String,
+    pub disabled: bool,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 #[async_trait]
 pub trait PortalAccessStore: Send + Sync {
     async fn upsert_oidc_member(
@@ -466,6 +478,14 @@ pub trait PortalAccessStore: Send + Sync {
         service_name: &str,
         token_roles: &[String],
     ) -> GatewayResult<Option<ManagedIdentityBinding>>;
+    async fn workload_projects(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        token_roles: &[String],
+    ) -> GatewayResult<Vec<ProjectResponse>>;
+    async fn list_project_keys(&self, project_id: Uuid) -> GatewayResult<Vec<OwnerProjectKey>>;
     async fn workload_project_binding(
         &self,
         tenant_id: &str,
@@ -644,6 +664,20 @@ where
         (**self)
             .workload_service_binding(tenant_id, client_id, object_id, service_name, token_roles)
             .await
+    }
+    async fn workload_projects(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        object_id: Option<&str>,
+        token_roles: &[String],
+    ) -> GatewayResult<Vec<ProjectResponse>> {
+        (**self)
+            .workload_projects(tenant_id, client_id, object_id, token_roles)
+            .await
+    }
+    async fn list_project_keys(&self, project_id: Uuid) -> GatewayResult<Vec<OwnerProjectKey>> {
+        (**self).list_project_keys(project_id).await
     }
     async fn workload_project_binding(
         &self,
