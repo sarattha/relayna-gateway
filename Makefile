@@ -95,7 +95,7 @@ security-rust: ## Run Rust dependency and nextest security-oriented checks
 .PHONY: security-fs
 security-fs: ## Run repository filesystem, secret, and static-analysis checks
 	trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
-	gitleaks detect --source . --redact
+	gitleaks detect --source . --redact --log-opts=HEAD
 	semgrep scan --config .semgrep.yml
 
 .PHONY: security-image

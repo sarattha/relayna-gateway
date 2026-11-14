@@ -72,6 +72,8 @@ jobs:
         run: |
           cargo test --workspace --all-features
           cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
+          cargo test --manifest-path vendor/sqlx-sqlite/Cargo.toml --features bundled --config 'patch.crates-io.sqlx-sqlite.path="vendor/sqlx-sqlite"'
+          python3 -c 'from pathlib import Path; Path("vendor/sqlx-sqlite/Cargo.lock").unlink(missing_ok=True)'
 
       - name: Build workspace
         if: steps.cargo.outputs.present == 'true'

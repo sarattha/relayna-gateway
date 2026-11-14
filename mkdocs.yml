@@ -51,6 +51,7 @@ nav:
   - OpenAPI Service Pricing: openapi-service-pricing.md
   - Current Feature Highlights: current-features.md
   - LiteLLM Passthrough: litellm-passthrough.md
+  - LiteLLM Customer Usage: litellm-customer-usage.md
   - Entra ID Auth: entra-id-auth.md
   - Entra Authorization Debug Mode: operations/entra-authorization-debug.md
   - Apigee Gateway Path: apigee-gateway-path.md
@@ -62,6 +63,7 @@ nav:
   - Runtime Image Security: runtime-image-security.md
   - Benchmarks:
       - Release benchmark history: benchmarks/index.md
+      - v1.3.0 validation: benchmarks/v1.3.0.md
       - v1.2.0 results: benchmarks/v1.2.0.md
       - v1.0.2 results: benchmarks/v1.0.2.md
       - v1.0.1 results: benchmarks/v1.0.1.md

@@ -1,5 +1,34 @@
 # Releases
 
+## 1.3.0: LiteLLM customer usage and costs
+
+Version **1.3.0** adds customer-ID cost and request reporting for mapped LiteLLM
+credentials, including Gateway-managed requests. **Usage & cost** supports
+bounded directory pages, exact-ID lookup, explicit UTC days and streaming CSV
+export of all currently registered customers with matching activity. Customer
+records and aggregates stay in LiteLLM and are fetched on demand.
+
+The dedicated [customer usage guide](litellm-customer-usage.md) explains setup,
+permissions, API contracts, data ownership, large-directory behavior and export
+limitations. Existing v1.2.0 proxy, usage and budget contracts remain supported;
+no PostgreSQL or Redis migration is required. See the
+[upgrade guide](deployment.md#upgrade-to-130).
+
+The [1.3.0 validation record](benchmarks/v1.3.0.md) now contains **207 fresh
+native amd64 trials** across 5, 10, 20, 40, 80 and 100 MiB JSON, with three
+stable confirmations per selected setting. Audited HTML/JSON/CSV and original
+raw evidence are preserved in an immutable archive and wired into documentation
+hosting. The 10 MiB study establishes a repeated resource edge; the other sizes
+are tested lower bounds with intermittent adjacent OOMs. Production headroom
+is required, and lost denial replies remain explicit.
+
+**The controlled same-runner v1.2.0 comparison is still pending.** Keep this
+version bump unmerged and do not tag or publish until its result/evidence and
+final-head CI/review requirements pass. Synthetic customer UI/export tests do
+not replace release validation.
+
+## Earlier releases
+
 Version **1.2.0** combines request-analysis and storage/network reuse, bounded
 authentication with shared cold proofs, Linux secret-memory protections and
 optional size-aware/elastic body admission. It advances two minor versions
@@ -218,11 +247,21 @@ together and run the verification stack when upgrading the compiler. This
 avoids changing the required lint baseline whenever the stable channel moves.
 
 1. Update workspace crate versions.
+
+   At the next version bump after 1.3.0, and every bump until removal, recheck
+   the temporary `sqlx-sqlite` backport against published SQLx releases. Record
+   the version checked and the retain/remove decision in the release PR. Once
+   a compatible release accepts patched SQLite bindings, upgrade and remove
+   the vendor directory, Cargo patch/exclusion and dedicated verification
+   references; regenerate the lockfile and pass the full dependency audit and
+   Gateway tests. The exact cleanup procedure and ownership are documented in
+   [the patch maintenance note](https://github.com/sarattha/relayna-gateway/blob/main/vendor/sqlx-sqlite/README.relayna.md#required-review-at-the-next-gateway-version).
+
 2. Update `CHANGELOG.md` with release notes.
 3. Run the full verification stack:
 
    ```bash
-   python3 scripts/validate-release-metadata.py v1.2.0
+   python3 scripts/validate-release-metadata.py v1.3.0
    cargo fmt --all --check
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace --all-features
@@ -240,7 +279,7 @@ avoids changing the required lint baseline whenever the stable channel moves.
 4. Build the release image:
 
    ```bash
-   docker build -t relayna-gateway:1.2.0 .
+   docker build -t relayna-gateway:1.3.0 .
    ```
 
 5. Commit the final runtime candidate, run the fresh six-size adaptive benchmark
@@ -254,8 +293,8 @@ avoids changing the required lint baseline whenever the stable channel moves.
 7. Create and push the tag at the merged release commit:
 
    ```bash
-   git tag -a v1.2.0 -m "Release v1.2.0"
-   git push origin v1.2.0
+   git tag -a v1.3.0 -m "Release v1.3.0"
+   git push origin v1.3.0
    ```
 
 The GitHub release workflow validates that the tag version, workspace package
@@ -265,11 +304,11 @@ section, publishes the Docker image to GitHub Container Registry, scans the
 image, generates an SBOM, signs the image digest with Cosign keyless signing,
 and attaches provenance.
 
-For `v1.2.0`, the workflow publishes:
+For `v1.3.0`, the workflow publishes:
 
 ```text
-ghcr.io/sarattha/relayna-gateway:1.2.0
-ghcr.io/sarattha/relayna-gateway:1.2
+ghcr.io/sarattha/relayna-gateway:1.3.0
+ghcr.io/sarattha/relayna-gateway:1.3
 ghcr.io/sarattha/relayna-gateway:latest
 ```
 

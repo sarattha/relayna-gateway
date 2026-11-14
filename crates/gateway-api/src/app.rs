@@ -1,4 +1,5 @@
 mod gateway_monitoring;
+mod litellm_customer_export;
 mod litellm_spend;
 use crate::portal::{
     constant_time_eq, pkce_challenge, random_opaque_token, safe_return_to, token_hash,
@@ -719,6 +720,14 @@ fn router_with_state_and_admission(
         .route(
             "/admin-ui/admin/keys/{key_id}/litellm-spend",
             get(litellm_spend::key_spend),
+        )
+        .route(
+            "/admin-ui/admin/keys/{key_id}/litellm-customer-spend",
+            get(litellm_spend::customer_spend),
+        )
+        .route(
+            "/admin-ui/admin/keys/{key_id}/litellm-customer-spend/export.csv",
+            get(litellm_customer_export::customer_spend_export),
         )
         .route("/admin-ui/admin/usage/by-service", get(usage_by_service))
         .route("/admin-ui/admin/usage/by-task", get(usage_by_task))
@@ -11205,6 +11214,417 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_export_requires_export_scope_and_sanitizes_startup_failures() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let path = format!(
+            "/admin-ui/admin/keys/{}/litellm-customer-spend/export.csv?start_date=2026-11-01&end_date=2026-11-13",
+            stored.id
+        );
+        let mut store = default_store();
+        *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+        store
+            .operator_tokens
+            .lock()
+            .unwrap()
+            .push(TEST_USAGE_OPERATOR_TOKEN.to_owned());
+        let app = router_with_state(test_state(store.clone()));
+        assert_eq!(
+            admin_get(app.clone(), &path, None).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            admin_get(app.clone(), &path, Some(TEST_USAGE_OPERATOR_TOKEN))
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        let response = admin_get(app.clone(), &path, Some(TEST_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response_json(response).await["error"]["code"],
+            "litellm_customer_mapping_missing"
+        );
+        assert_eq!(
+            admin_get(
+                app,
+                path.split('?').next().unwrap(),
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            admin_get(
+                router_with_state(test_state(default_store())),
+                &path,
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+
+        let (base, _captured) = spawn_litellm_server(
+            "503 Service Unavailable",
+            vec![],
+            "private upstream failure",
+        );
+        store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+            scope: gateway_core::LiteLlmCredentialMappingScope::Key,
+            credential: "mapped-fixture".into(),
+        });
+        let response = admin_get(
+            router_with_state(test_state_with_litellm(store, base, "server-fixture")),
+            &path,
+            Some(TEST_OPERATOR_TOKEN),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = response_json(response).await;
+        assert_eq!(body["error"]["code"], "litellm_customer_export_unavailable");
+        assert!(!body.to_string().contains("private upstream failure"));
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_spend_requires_usage_scope_mapping_and_valid_query() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let root = format!("/admin-ui/admin/keys/{}/litellm-customer-spend", stored.id);
+        let dates = "start_date=2026-11-01&end_date=2026-11-13";
+        let path = format!("{root}?{dates}");
+        let store = default_store();
+        *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+        store.operator_tokens.lock().unwrap().extend([
+            TEST_USAGE_OPERATOR_TOKEN.to_owned(),
+            TEST_POLICY_OPERATOR_TOKEN.to_owned(),
+        ]);
+        let app = router_with_state(test_state(store));
+        for (token, status) in [
+            (None, StatusCode::UNAUTHORIZED),
+            (Some(TEST_POLICY_OPERATOR_TOKEN), StatusCode::FORBIDDEN),
+        ] {
+            assert_eq!(admin_get(app.clone(), &path, token).await.status(), status);
+        }
+        let response = admin_get(app.clone(), &path, Some(TEST_USAGE_OPERATOR_TOKEN)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        let body = response_json(response).await;
+        assert_eq!(body["status"], "not_mapped");
+        assert_eq!(body["customers"], serde_json::json!([]));
+        assert_eq!(body["page"], 1);
+        assert_eq!(body["page_size"], 50);
+        assert_eq!(body["customers_checked"], 0);
+        assert_eq!(body["has_more"], false);
+        assert!(body["fetched_at"].is_null());
+        assert_eq!(
+            admin_get(
+                router_with_state(test_state(default_store())),
+                &path,
+                Some(TEST_OPERATOR_TOKEN)
+            )
+            .await
+            .status(),
+            StatusCode::NOT_FOUND
+        );
+        for query in [
+            "".to_owned(),
+            "start_date=2026-11-01".into(),
+            "start_date=2026-11-1&end_date=2026-11-13".into(),
+            "start_date=2026-11-14&end_date=2026-11-13".into(),
+            "start_date=2025-01-01&end_date=2026-01-02".into(),
+            format!("{dates}&page=0"),
+            format!("{dates}&page=1000001"),
+            format!("{dates}&page_size=0"),
+            format!("{dates}&page_size=101"),
+            format!("{dates}&customer_id="),
+            format!("{dates}&customer_id=customer%2Cother"),
+            format!("{dates}&customer_id=customer%0Aother"),
+        ] {
+            let response = admin_get(
+                app.clone(),
+                &format!("{root}?{query}"),
+                Some(TEST_OPERATOR_TOKEN),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(
+                response_json(response).await["error"]["code"],
+                "invalid_usage_query"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_spend_exact_lookup_bypasses_directory_and_sanitizes_complete_totals()
+    {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        use gateway_core::LiteLlmCredentialMappingScope::{Key, Project};
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&customer_id=%20customer-a%20&page=900000",stored.id);
+        let key_hash = format!("{:x}", Sha256::digest(b"mapped-secret"));
+        let day = |date, spend, requests| {
+            serde_json::json!({"date":date,"breakdown":{"entities":{
+                "customer-a":{"metrics":{"spend":9999,"api_requests":9999},"metadata":{"token":"upstream-secret"},"api_key_breakdown":{
+                    (key_hash.clone()):{"metrics":{"spend":spend,"api_requests":requests}},
+                    "other-key-hash":{"metrics":{"spend":999,"api_requests":999}}
+                }}
+            }}})
+        };
+        let activity = serde_json::json!({"results":[day("2026-11-13",1.25,2),day("2026-11-12",0.75,1)],"metadata":{"page":1,"total_pages":1,"has_more":false}});
+        for scope in [Key, Project] {
+            let (base, captured, server) =
+                spawn_litellm_customer_activity(serde_json::json!([]), activity.clone()).await;
+            let mut store = default_store();
+            *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+            store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+                scope,
+                credential: "mapped-secret".into(),
+            });
+            if scope == Project {
+                store.spend_provider = Some(gateway_core::ProviderRuntimeConfig {
+                    provider: gateway_core::Provider::LiteLlm,
+                    base_url: base.clone(),
+                    credential: Some("server-secret".into()),
+                    credential_header_mode: CredentialHeaderMode::CustomHeader,
+                    credential_header_name: Some("x-litellm-key".into()),
+                    credential_header_value_format: CredentialHeaderValueFormat::Bearer,
+                });
+            }
+            let response = admin_get(
+                router_with_state(test_state_with_litellm(store, base, "server-secret")),
+                &path,
+                Some(TEST_OPERATOR_TOKEN),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            let body = response_json(response).await;
+            assert_eq!(body["status"], "available");
+            assert_eq!(
+                body["mapping_scope"],
+                if scope == Key { "key" } else { "project" }
+            );
+            assert_eq!(
+                body["customers"],
+                serde_json::json!([{"customer_id":"customer-a","spend_usd":2.0,"requests":3}])
+            );
+            assert_eq!(body["page"], 1);
+            assert_eq!(body["customers_checked"], 1);
+            assert_eq!(body["has_more"], false);
+            assert_eq!(body["customer_id"], "customer-a");
+            assert!(body["fetched_at"].is_string());
+            let text = body.to_string();
+            for forbidden in ["secret", "hash"] {
+                assert!(!text.contains(forbidden));
+            }
+            let (uri, headers) = captured.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert_eq!(uri,format!("/customer/daily/activity/aggregated?api_key={key_hash}&end_user_ids=customer-a&start_date=2026-11-01&end_date=2026-11-13&api_key_limit=1"));
+            assert!(headers.get("cookie").is_none());
+            assert_eq!(
+                headers[if scope == Key {
+                    "authorization"
+                } else {
+                    "x-litellm-key"
+                }],
+                "Bearer server-secret"
+            );
+            assert!(
+                captured.try_recv().is_err(),
+                "exact lookup must not request a customer directory"
+            );
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_spend_pages_a_million_customers_without_walking_previous_pages() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let key_hash = format!("{:x}", Sha256::digest(b"mapped-secret"));
+        // A logical million-entry registry generates only the requested page.
+        for page in [1, 20_000, 20_001] {
+            let start = (page - 1) * 50;
+            let ids: Vec<_> = (start..(start + 50).min(1_000_000))
+                .map(|id| format!("customer-{id:07}"))
+                .collect();
+            let directory: Vec<_> = ids
+                .iter()
+                .map(|id| serde_json::json!({"user_id":id,"spend":999999,"token":"global-secret"}))
+                .collect();
+            let entities:serde_json::Map<_,_>=ids.iter().step_by(2).map(|id|(id.clone(),serde_json::json!({"api_key_breakdown":{(key_hash.clone()):{"metrics":{"spend":0.25,"api_requests":3}}}}))).collect();
+            let activity = serde_json::json!({"results":if ids.is_empty() {serde_json::json!([])} else {serde_json::json!([{"date":"2026-11-13","breakdown":{"entities":entities}}])},"metadata":{"page":1,"total_pages":1,"has_more":false}});
+            let (base, captured, server) =
+                spawn_litellm_customer_activity(serde_json::json!(directory), activity).await;
+            let mut store = default_store();
+            *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+            store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+                scope: gateway_core::LiteLlmCredentialMappingScope::Key,
+                credential: "mapped-secret".into(),
+            });
+            let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&page={page}&page_size=50",stored.id);
+            let response = admin_get(
+                router_with_state(test_state_with_litellm(store, base, "server-secret")),
+                &path,
+                Some(TEST_OPERATOR_TOKEN),
+            )
+            .await;
+            let body = response_json(response).await;
+            assert_eq!(body["status"], "available");
+            assert_eq!(body["page"], page);
+            assert_eq!(body["page_size"], 50);
+            assert_eq!(body["customers_checked"], ids.len());
+            assert_eq!(body["has_more"], ids.len() == 50);
+            assert_eq!(body["customers"].as_array().unwrap().len(), ids.len() / 2);
+            assert!(body.to_string().len() < 12 * 1024);
+            assert!(!body.to_string().contains("global-secret"));
+            assert!(!body.to_string().contains("\"spend\":999999"));
+            let (uri, _) = captured.recv_timeout(Duration::from_secs(2)).unwrap();
+            assert_eq!(uri, format!("/customer/list?page={page}&page_size=50"));
+            if !ids.is_empty() {
+                let (uri, _) = captured.recv_timeout(Duration::from_secs(2)).unwrap();
+                let url = reqwest::Url::parse(&format!("http://fixture{uri}")).unwrap();
+                let params: std::collections::HashMap<_, _> =
+                    url.query_pairs().into_owned().collect();
+                assert_eq!(url.path(), "/customer/daily/activity/aggregated");
+                assert_eq!(params["end_user_ids"], ids.join(","));
+                assert_eq!(params["api_key"], key_hash);
+                assert_eq!(params["api_key_limit"], "1");
+            }
+            assert!(
+                captured.try_recv().is_err(),
+                "one directory page and one aggregate at most"
+            );
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_spend_empty_activity_keeps_next_and_rejects_ignored_pagination() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let empty = serde_json::json!({"results":[],"metadata":{"page":1,"total_pages":0,"has_more":false}});
+        for (directory, activity, expected, has_more) in [
+            (
+                serde_json::json!([{"user_id":"unrelated-a"},{"user_id":"unrelated-b"}]),
+                empty.clone(),
+                "available",
+                true,
+            ),
+            (
+                serde_json::json!([{"user_id":"a"},{"user_id":"b"},{"user_id":"c"}]),
+                empty.clone(),
+                "unavailable",
+                false,
+            ),
+            (
+                serde_json::json!([{"user_id":"a"},{"user_id":"a"}]),
+                empty.clone(),
+                "unavailable",
+                false,
+            ),
+            (
+                serde_json::json!([{"user_id":"a"}]),
+                serde_json::json!({"results":[],"metadata":{"page":1,"total_pages":2,"has_more":true}}),
+                "unavailable",
+                false,
+            ),
+        ] {
+            let (base, _, server) = spawn_litellm_customer_activity(directory, activity).await;
+            let mut store = default_store();
+            *store.admin_key.lock().unwrap() = Some(admin_key_for(&stored, Default::default()));
+            store.spend_credential = Some(gateway_core::LiteLlmCredentialMappingRuntime {
+                scope: gateway_core::LiteLlmCredentialMappingScope::Key,
+                credential: "mapped-secret".into(),
+            });
+            let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&page_size=2",stored.id);
+            let body = response_json(
+                admin_get(
+                    router_with_state(test_state_with_litellm(store, base, "server-secret")),
+                    &path,
+                    Some(TEST_OPERATOR_TOKEN),
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(body["status"], expected);
+            assert_eq!(body["has_more"], has_more);
+            assert_eq!(body["customers"], serde_json::json!([]));
+            assert!(!body.to_string().contains("unrelated"));
+            if expected == "unavailable" {
+                assert_eq!(body["customers_checked"], 0);
+                assert!(body["fetched_at"].is_null());
+            }
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn litellm_customer_spend_discards_upstream_failures_and_partial_aggregates() {
+        let _crypto_test = KEY_CRYPTO_TEST_LOCK.lock().await;
+        let stored = stored_key(&format!("rk_live_{}", Uuid::new_v4().simple()));
+        let path=format!("/admin-ui/admin/keys/{}/litellm-customer-spend?start_date=2026-11-01&end_date=2026-11-13&customer_id=customer",stored.id);
+        for (status,payload) in [
+            ("403 Forbidden","server-secret".into()),("302 Found","".into()),("404 Not Found","old LiteLLM lacks aggregate route".into()),
+            ("200 OK","invalid".into()),("200 OK","x".repeat(2*1024*1024+1)),
+            ("200 OK",serde_json::json!({"results":[],"metadata":{"page":1,"total_pages":2,"has_more":true}}).to_string()),
+        ] {
+            let (base,captured)=spawn_litellm_server(status,vec![],&payload);
+            let mut store=default_store();
+            *store.admin_key.lock().unwrap()=Some(admin_key_for(&stored,Default::default()));
+            store.spend_credential=Some(gateway_core::LiteLlmCredentialMappingRuntime {scope:gateway_core::LiteLlmCredentialMappingScope::Key,credential:"mapped-secret".into()});
+            let body=response_json(admin_get(router_with_state(test_state_with_litellm(store,base,"server-secret")),&path,Some(TEST_OPERATOR_TOKEN)).await).await;
+            assert_eq!(body["status"],"unavailable");assert_eq!(body["customers"],serde_json::json!([]));
+            assert_eq!(body["customers_checked"],0);assert_eq!(body["has_more"],false);assert!(body["fetched_at"].is_null());
+            assert!(!body.to_string().contains("secret"));
+            captured.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+    }
+
+    async fn spawn_litellm_customer_activity(
+        directory: Value,
+        activity: Value,
+    ) -> (
+        String,
+        mpsc::Receiver<(String, HeaderMap)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let (tx, rx) = mpsc::channel();
+        let activity_tx = tx.clone();
+        let app = Router::new()
+            .route(
+                "/customer/list",
+                get(move |uri: axum::http::Uri, headers: HeaderMap| {
+                    let value = directory.clone();
+                    let tx = tx.clone();
+                    async move {
+                        let _ = tx.send((uri.to_string(), headers));
+                        Json(value)
+                    }
+                }),
+            )
+            .route(
+                "/customer/daily/activity/aggregated",
+                get(move |uri: axum::http::Uri, headers: HeaderMap| {
+                    let value = activity.clone();
+                    let tx = activity_tx.clone();
+                    async move {
+                        let _ = tx.send((uri.to_string(), headers));
+                        Json(value)
+                    }
+                }),
+            );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (base, rx, server)
     }
 
     fn spawn_litellm_server(

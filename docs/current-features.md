@@ -1,5 +1,16 @@
 # Current Feature Highlights
 
+## LiteLLM customer usage and costs (1.3.0)
+
+**Usage & cost** reports cost and request count by customer ID for a Relayna
+key's mapped LiteLLM credential, including Gateway-managed requests. Browse
+bounded pages, look up an exact customer ID, or stream all registered customers'
+matching activity to CSV. Gateway reads customer data directly from LiteLLM;
+it does not copy the directory or customer aggregates into its database.
+See [setup, pagination and export](litellm-customer-usage.md).
+
+## Monitoring and retained features
+
 Usage opens with a bounded 24-hour range and independently loads summaries,
 request pages, and selected breakdowns. Traffic separates retained active HTTP
 and WebSocket summaries from recent completions. Health and Traffic expose live

@@ -6,3 +6,10 @@
 [[profile.default.overrides]]
 filter = 'package(gateway-core) & test(/^auth::tests::/)'
 threads-required = "num-test-threads"
+
+# These control-plane guardrail tests also verify real virtual-key secrets.
+# Their process-local KEY_CRYPTO_TEST_LOCK cannot isolate them from other
+# Nextest processes competing for CPU within the production admission deadline.
+[[profile.default.overrides]]
+filter = 'package(gateway-api) & (test(guardrail_list_requires_virtual_key) | test(guardrail_test_runs_pii_redact))'
+threads-required = "num-test-threads"

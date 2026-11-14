@@ -1267,7 +1267,7 @@ available from **Usage & cost** when a key filter is applied. **Refresh spend**
 reads the current LiteLLM counter; the dialog shows its retrieval time and whether
 it came from a key mapping or shared project mapping. Configure mappings under
 **Providers → LiteLLM credential mappings** for OpenAI/Anthropic endpoints in
-`manage_by_gateway` mode. Enabled key mappings take precedence over enabled
+`managed_by_gateway` mode. Enabled key mappings take precedence over enabled
 project mappings. Missing or disabled mappings produce an explicit empty state.
 
 The configured LiteLLM provider credential (or environment fallback) must have
@@ -1290,6 +1290,18 @@ The additive `GET /admin-ui/admin/keys/{key_id}/litellm-spend` endpoint requires
 `usage:read`, returns `Cache-Control: no-store`, and returns 404 for an unknown
 Gateway key. Its `status` is `available`, `not_mapped` or `unavailable`;
 `spend_usd` and `fetched_at` are null unless a read succeeds.
+
+### LiteLLM cost per customer
+
+In **Usage & cost**, select a virtual key to browse **LiteLLM customer costs**
+for its mapped credential. This supports Gateway-managed requests, 50-customer
+pages (100 maximum), exact-ID lookup, and streaming export of all currently
+registered customers with matching activity.
+
+Customer records and aggregates are read from LiteLLM on demand and are not
+copied into Gateway's database. See the dedicated
+[LiteLLM customer usage and costs guide](litellm-customer-usage.md) for setup,
+UTC dates, permissions, APIs, large-directory behavior and export limitations.
 
 Newly created virtual keys remain visible until **Close** is explicitly activated.
 Backdrop clicks and Escape cannot dismiss show-once credentials. Copy the key and

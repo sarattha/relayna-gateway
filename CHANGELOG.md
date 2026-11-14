@@ -4,6 +4,53 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ## Unreleased
 
+## 1.3.0 - 2026-11-14
+
+### Added
+
+- Report LiteLLM cost and request count per customer ID in **Usage & cost** for
+  Relayna keys with enabled LiteLLM credential mappings, including
+  `managed_by_gateway` requests. Browse 50 registered customers per page
+  (100 maximum), look up an exact ID and select up to 366 inclusive UTC days.
+- Stream all currently registered customers' matching usage to CSV in bounded
+  100-ID batches, with cancellation, spreadsheet-safe IDs and two concurrent
+  exports per Gateway process. Export is independent of the current page or
+  exact-ID filter and requires `usage:export`.
+- Add a dedicated [customer usage and costs guide](https://sarattha.github.io/relayna-gateway/litellm-customer-usage/)
+  covering setup, data ownership, pagination, permissions, APIs and exports.
+
+### Changed
+
+- Read customer directories and key-scoped aggregates from LiteLLM on demand;
+  do not replicate customer records or customer-cost totals into Gateway's
+  database. The browser retains at most three pages for 30 seconds.
+- Refresh vulnerable optional SQLite/Quinn and JavaScript tooling dependencies.
+  Retain the SQLx SQLite driver with a manifest-only binding compatibility
+  backport outside Gateway's PostgreSQL runtime feature graph.
+
+### Compatibility and upgrade
+
+- Add report/export endpoints without changing v1.2.0 proxy, usage, budget,
+  configuration or persisted-state contracts. No database or Redis migration
+  is required. Reads require `usage:read`; exports require `usage:export`.
+- Require bounded LiteLLM customer listing and complete daily customer
+  aggregates. Shared mapped credentials include traffic outside Gateway;
+  deleted customer IDs require exact lookup for retained history. Deep-page
+  latency depends on LiteLLM's offset pagination and database performance.
+- See [upgrade instructions](https://sarattha.github.io/relayna-gateway/deployment/#upgrade-to-130).
+
+### Release validation
+
+- Complete 207 fresh native amd64 adaptive body-admission trials across all
+  six sizes, with three stable confirmations per selected setting. Preserve
+  audited HTML/JSON/CSV, provenance, failed trials and checksums in an immutable
+  documentation archive. The 10 MiB setting establishes a repeated resource
+  edge; other sizes remain tested lower bounds requiring production headroom.
+- The controlled same-runner comparison with v1.2.0 remains pending. Do not
+  merge, tag or publish until its result/evidence and final-head CI/reviews
+  are complete. See the [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.3.0/).
+  Synthetic million-row export checks do not replace this gate.
+
 ## 1.2.0 - 2026-11-06
 
 ### Added

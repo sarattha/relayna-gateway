@@ -29,13 +29,17 @@ run_step cargo fmt --all --check
 run_step cargo clippy --workspace --all-targets --all-features -- -D warnings
 run_step cargo test --workspace --all-features
 run_step cargo test --manifest-path vendor/pingora-header-serde/Cargo.toml
+run_step cargo test --manifest-path vendor/sqlx-sqlite/Cargo.toml --features bundled --config 'patch.crates-io.sqlx-sqlite.path="vendor/sqlx-sqlite"'
+# The standalone check resolves a temporary test graph; audit the workspace lock.
+python3 -c 'from pathlib import Path; Path("vendor/sqlx-sqlite/Cargo.lock").unlink(missing_ok=True)'
 # webpki-roots 0.26.11 only reexports 1.x; deny.toml bans unpatched root data.
 run_step cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0437 --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0381
 run_step cargo deny check
 run_step cargo machete
 run_step cargo nextest run --workspace --all-features
 run_step trivy fs --severity HIGH,CRITICAL --exit-code 1 --skip-dirs target --skip-dirs site .
-run_step gitleaks detect --source . --redact
+# Scan all history being published, without including private recovery refs.
+run_step gitleaks detect --source . --redact --log-opts=HEAD
 run_step semgrep scan --config .semgrep.yml
 
 echo "code-change-verification: all commands passed."

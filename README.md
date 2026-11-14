@@ -120,6 +120,13 @@ The Rust verification helper runs formatting, workspace Clippy/tests and the req
 
 ## Releases and performance evidence
 
+Version **1.3.0** adds [LiteLLM customer usage and costs](docs/litellm-customer-usage.md):
+paginated customer IDs, exact lookup and streaming CSV export for mapped
+LiteLLM credentials, including Gateway-managed requests. Customer data stays in
+LiteLLM and is read on demand. No database or Redis migration is required.
+The [1.3.0 validation record](docs/benchmarks/v1.3.0.md) tracks the fresh release
+benchmarks; publication remains gated on their completion.
+
 [v1.2.0 validation](docs/benchmarks/v1.2.0.md) · [v1.0.2 validation](docs/benchmarks/v1.0.2.md) · [v1.0.1 validation](docs/benchmarks/v1.0.1.md) · [v1.0.0 validation](docs/benchmarks/v1.0.0.md) · [v0.1.49 baseline](docs/benchmarks/v0.1.49.md) · [Benchmark history](docs/benchmarks/index.md) · [Release notes](docs/releases.md) · [Changelog](CHANGELOG.md) · [Upgrade guide](docs/deployment.md)
 
 Version **1.2.0** adds bounded authentication with reusable secret proofs and

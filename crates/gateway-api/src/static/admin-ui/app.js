@@ -1,4 +1,4 @@
-//#region \0rolldown/runtime.js
+// \0rolldown/runtime.js
 var __create = Object.create;
 var __defProp$19 = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -13,7 +13,7 @@ var __esmMin = (fn, res, err) => () => {
 		throw err = [e], e;
 	}
 };
-var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod), cb = null), mod.exports);
+var __commonJSMin = (cb, mod) => () => (mod || (cb((mod = { exports: {} }).exports, mod, mod.exports), cb = null), mod.exports);
 var __exportAll = (all, no_symbols) => {
 	let target = {};
 	for (var name in all) __defProp$19(target, name, {
@@ -37,8 +37,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 	value: mod,
 	enumerable: true
 }) : target, mod));
-//#endregion
-//#region \0vite/modulepreload-polyfill.js
+// \0vite/modulepreload-polyfill.js
 (function polyfill() {
 	const relList = document.createElement("link").relList;
 	if (relList && relList.supports && relList.supports("modulepreload")) return;
@@ -68,8 +67,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 		fetch(link.href, fetchOpts);
 	}
 })();
-//#endregion
-//#region node_modules/scheduler/cjs/scheduler.production.js
+// node_modules/scheduler/cjs/scheduler.production.js
 /**
 * @license React
 * scheduler.production.js
@@ -323,13 +321,11 @@ var require_scheduler_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/scheduler/index.js
+// node_modules/scheduler/index.js
 var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_scheduler_production();
 }));
-//#endregion
-//#region node_modules/react/cjs/react.production.js
+// node_modules/react/cjs/react.production.js
 /**
 * @license React
 * react.production.js
@@ -715,13 +711,11 @@ var require_react_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	};
 	exports.version = "19.3.0";
 }));
-//#endregion
-//#region node_modules/react/index.js
+// node_modules/react/index.js
 var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_production();
 }));
-//#endregion
-//#region node_modules/react-dom/cjs/react-dom.production.js
+// node_modules/react-dom/cjs/react-dom.production.js
 /**
 * @license React
 * react-dom.production.js
@@ -873,8 +867,7 @@ var require_react_dom_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	};
 	exports.version = "19.3.0";
 }));
-//#endregion
-//#region node_modules/react-dom/index.js
+// node_modules/react-dom/index.js
 var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function checkDCE() {
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -887,8 +880,7 @@ var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	checkDCE();
 	module.exports = require_react_dom_production();
 }));
-//#endregion
-//#region node_modules/react-dom/cjs/react-dom-client.production.js
+// node_modules/react-dom/cjs/react-dom-client.production.js
 /**
 * @license React
 * react-dom-client.production.js
@@ -11462,8 +11454,7 @@ var require_react_dom_client_production = /* @__PURE__ */ __commonJSMin(((export
 		return new ReactDOMRoot(options);
 	};
 }));
-//#endregion
-//#region node_modules/react-dom/client.js
+// node_modules/react-dom/client.js
 var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function checkDCE() {
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -11476,8 +11467,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	checkDCE();
 	module.exports = require_react_dom_client_production();
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-compose-refs/dist/index.mjs
+// node_modules/@radix-ui/react-compose-refs/dist/index.mjs
 function setRef$1(ref, value) {
 	if (typeof ref === "function") return ref(value);
 	else if (ref !== null && ref !== void 0) ref.current = value;
@@ -11500,11 +11490,11 @@ function composeRefs(...refs) {
 	};
 }
 function useComposedRefs(...refs) {
-	return import_react$39.useCallback(composeRefs(...refs), refs);
+	return import_react$40.useCallback(composeRefs(...refs), refs);
 }
-var import_react$39, __defProp$18, __name$18;
+var import_react$40, __defProp$18, __name$18;
 var init_dist$20 = __esmMin((() => {
-	import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$40 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$18 = Object.defineProperty;
 	__name$18 = (target, value) => __defProp$18(target, "name", {
 		value,
@@ -11514,17 +11504,16 @@ var init_dist$20 = __esmMin((() => {
 	__name$18(composeRefs, "composeRefs");
 	__name$18(useComposedRefs, "useComposedRefs");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-slot/dist/index.mjs
+// node_modules/@radix-ui/react-slot/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createSlot(ownerName) {
-	const Slot2 = import_react$38.forwardRef((props, forwardedRef) => {
+	const Slot2 = import_react$39.forwardRef((props, forwardedRef) => {
 		let { children, ...slotProps } = props;
 		let slottableElement = null;
 		let hasSlottable = false;
 		const newChildren = [];
 		if (isLazyComponent(children) && typeof use === "function") children = use(children._payload);
-		import_react$38.Children.forEach(children, (maybeSlottable) => {
+		import_react$39.Children.forEach(children, (maybeSlottable) => {
 			if (isSlottable(maybeSlottable)) {
 				hasSlottable = true;
 				const slottable = maybeSlottable;
@@ -11534,8 +11523,8 @@ function createSlot(ownerName) {
 				newChildren.push(slottableElement?.props?.children);
 			} else newChildren.push(maybeSlottable);
 		});
-		if (slottableElement) slottableElement = import_react$38.cloneElement(slottableElement, void 0, newChildren);
-		else if (!hasSlottable && import_react$38.Children.count(children) === 1 && import_react$38.isValidElement(children)) slottableElement = children;
+		if (slottableElement) slottableElement = import_react$39.cloneElement(slottableElement, void 0, newChildren);
+		else if (!hasSlottable && import_react$39.Children.count(children) === 1 && import_react$39.isValidElement(children)) slottableElement = children;
 		const slottableElementRef = slottableElement ? getElementRef$1(slottableElement) : void 0;
 		const composedRef = useComposedRefs(forwardedRef, slottableElementRef);
 		if (!slottableElement) {
@@ -11543,8 +11532,8 @@ function createSlot(ownerName) {
 			return children;
 		}
 		const mergedProps = mergeProps(slotProps, slottableElement.props ?? {});
-		if (slottableElement.type !== import_react$38.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
-		return import_react$38.cloneElement(slottableElement, mergedProps);
+		if (slottableElement.type !== import_react$39.Fragment) mergedProps.ref = forwardedRef ? composedRef : slottableElementRef;
+		return import_react$39.cloneElement(slottableElement, mergedProps);
 	});
 	Slot2.displayName = `${ownerName}.Slot`;
 	return Slot2;
@@ -11589,7 +11578,7 @@ function getElementRef$1(element) {
 	return element.props.ref || element.ref;
 }
 function isSlottable(child) {
-	return import_react$38.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
+	return import_react$39.isValidElement(child) && typeof child.type === "function" && "__radixId" in child.type && child.type.__radixId === SLOTTABLE_IDENTIFIER;
 }
 function isLazyComponent(element) {
 	return element != null && typeof element === "object" && "$$typeof" in element && element.$$typeof === REACT_LAZY_TYPE && "_payload" in element && isPromiseLike(element._payload);
@@ -11597,9 +11586,9 @@ function isLazyComponent(element) {
 function isPromiseLike(value) {
 	return typeof value === "object" && value !== null && "then" in value;
 }
-var import_react$38, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
+var import_react$39, __defProp$17, __name$17, Slot$1, SLOTTABLE_IDENTIFIER, getSlottableElementFromSlottable, REACT_LAZY_TYPE, createSlotError, createSlottableError, use;
 var init_dist$19 = __esmMin((() => {
-	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	__defProp$17 = Object.defineProperty;
 	__name$17 = (target, value) => __defProp$17(target, "name", {
@@ -11613,10 +11602,10 @@ var init_dist$19 = __esmMin((() => {
 	getSlottableElementFromSlottable = /* @__PURE__ */ __name$17((slottable, child) => {
 		if ("child" in slottable.props) {
 			const child2 = slottable.props.child;
-			if (!import_react$38.isValidElement(child2)) return null;
-			return import_react$38.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
+			if (!import_react$39.isValidElement(child2)) return null;
+			return import_react$39.cloneElement(child2, void 0, slottable.props.children(child2.props.children));
 		}
-		return import_react$38.isValidElement(child) ? child : null;
+		return import_react$39.isValidElement(child) ? child : null;
 	}, "getSlottableElementFromSlottable");
 	__name$17(mergeProps, "mergeProps");
 	__name$17(getElementRef$1, "getElementRef");
@@ -11630,10 +11619,9 @@ var init_dist$19 = __esmMin((() => {
 	createSlottableError = /* @__PURE__ */ __name$17((ownerName) => {
 		return `${ownerName} failed to slot onto its \`Slottable\`. Expected \`Slottable\` to receive a single React element child.`;
 	}, "createSlottableError");
-	use = import_react$38[" use ".trim().toString()];
+	use = import_react$39[" use ".trim().toString()];
 }));
-//#endregion
-//#region node_modules/@radix-ui/primitive/dist/index.mjs
+// node_modules/@radix-ui/primitive/dist/index.mjs
 function composeEventHandlers(originalEventHandler, ourEventHandler, { checkForDefaultPrevented = true } = {}) {
 	return /* @__PURE__ */ __name$16(function handleEvent(event) {
 		originalEventHandler?.(event);
@@ -11678,8 +11666,7 @@ var init_dist$18 = __esmMin((() => {
 	__name$16(getActiveElement, "getActiveElement");
 	__name$16(isFrame, "isFrame");
 }));
-//#endregion
-//#region node_modules/react/cjs/react-jsx-runtime.production.js
+// node_modules/react/cjs/react-jsx-runtime.production.js
 /**
 * @license React
 * react-jsx-runtime.production.js
@@ -11713,21 +11700,19 @@ var require_react_jsx_runtime_production = /* @__PURE__ */ __commonJSMin(((expor
 	exports.jsx = jsxProd;
 	exports.jsxs = jsxProd;
 }));
-//#endregion
-//#region node_modules/react/jsx-runtime.js
+// node_modules/react/jsx-runtime.js
 var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_jsx_runtime_production();
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-context/dist/index.mjs
+// node_modules/@radix-ui/react-context/dist/index.mjs
 // @__NO_SIDE_EFFECTS__
 function createContext2(rootComponentName, defaultContext) {
-	const Context = import_react$37.createContext(defaultContext);
+	const Context = import_react$38.createContext(defaultContext);
 	Context.displayName = rootComponentName + "Context";
 	const Provider = /* @__PURE__ */ __name$15((props) => {
 		const { children, ...context } = props;
-		const value = import_react$37.useMemo(() => context, Object.values(context));
-		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
+		const value = import_react$38.useMemo(() => context, Object.values(context));
+		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Context.Provider, {
 			value,
 			children
 		});
@@ -11735,7 +11720,7 @@ function createContext2(rootComponentName, defaultContext) {
 	Provider.displayName = rootComponentName + "Provider";
 	function useContext2(consumerName, options = {}) {
 		const { optional = false } = options;
-		const context = import_react$37.useContext(Context);
+		const context = import_react$38.useContext(Context);
 		if (context) return context;
 		if (defaultContext !== void 0) return defaultContext;
 		if (optional) return void 0;
@@ -11748,15 +11733,15 @@ function createContext2(rootComponentName, defaultContext) {
 function createContextScope(scopeName, createContextScopeDeps = []) {
 	let defaultContexts = [];
 	function createContext3(rootComponentName, defaultContext) {
-		const BaseContext = import_react$37.createContext(defaultContext);
+		const BaseContext = import_react$38.createContext(defaultContext);
 		BaseContext.displayName = rootComponentName + "Context";
 		const index = defaultContexts.length;
 		defaultContexts = [...defaultContexts, defaultContext];
 		const Provider = /* @__PURE__ */ __name$15((props) => {
 			const { scope, children, ...context } = props;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const value = import_react$37.useMemo(() => context, Object.values(context));
-			return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Context.Provider, {
+			const value = import_react$38.useMemo(() => context, Object.values(context));
+			return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Context.Provider, {
 				value,
 				children
 			});
@@ -11765,7 +11750,7 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 		function useContext2(consumerName, scope, options = {}) {
 			const { optional = false } = options;
 			const Context = scope?.[scopeName]?.[index] || BaseContext;
-			const context = import_react$37.useContext(Context);
+			const context = import_react$38.useContext(Context);
 			if (context) return context;
 			if (defaultContext !== void 0) return defaultContext;
 			if (optional) return void 0;
@@ -11777,11 +11762,11 @@ function createContextScope(scopeName, createContextScopeDeps = []) {
 	__name$15(createContext3, "createContext");
 	const createScope = /* @__PURE__ */ __name$15(() => {
 		const scopeContexts = defaultContexts.map((defaultContext) => {
-			return import_react$37.createContext(defaultContext);
+			return import_react$38.createContext(defaultContext);
 		});
 		return /* @__PURE__ */ __name$15(function useScope(scope) {
 			const contexts = scope?.[scopeName] || scopeContexts;
-			return import_react$37.useMemo(() => ({ [`__scope${scopeName}`]: {
+			return import_react$38.useMemo(() => ({ [`__scope${scopeName}`]: {
 				...scope,
 				[scopeName]: contexts
 			} }), [scope, contexts]);
@@ -11806,16 +11791,16 @@ function composeContextScopes(...scopes) {
 					...currentScope
 				};
 			}, {});
-			return import_react$37.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
+			return import_react$38.useMemo(() => ({ [`__scope${baseScope.scopeName}`]: nextScopes }), [nextScopes]);
 		}, "useComposedScopes");
 	}, "createScope");
 	createScope.scopeName = baseScope.scopeName;
 	return createScope;
 }
-var import_react$37, import_jsx_runtime$19, __defProp$15, __name$15;
+var import_react$38, import_jsx_runtime$20, __defProp$15, __name$15;
 var init_dist$17 = __esmMin((() => {
-	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
-	import_jsx_runtime$19 = require_jsx_runtime();
+	import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_jsx_runtime$20 = require_jsx_runtime();
 	__defProp$15 = Object.defineProperty;
 	__name$15 = (target, value) => __defProp$15(target, "name", {
 		value,
@@ -11825,43 +11810,39 @@ var init_dist$17 = __esmMin((() => {
 	__name$15(createContextScope, "createContextScope");
 	__name$15(composeContextScopes, "composeContextScopes");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-use-layout-effect/dist/index.mjs
-var import_react$36, useLayoutEffect2;
+// node_modules/@radix-ui/react-use-layout-effect/dist/index.mjs
+var import_react$37, useLayoutEffect2;
 var init_dist$16 = __esmMin((() => {
-	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
-	useLayoutEffect2 = globalThis?.document ? import_react$36.useLayoutEffect : () => {};
+	import_react$37 = /* @__PURE__ */ __toESM(require_react(), 1);
+	useLayoutEffect2 = globalThis?.document ? import_react$37.useLayoutEffect : () => {};
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-id/dist/index.mjs
-function useId$2(deterministicId) {
-	const [id, setId] = import_react$35.useState(useReactId());
+// node_modules/@radix-ui/react-id/dist/index.mjs
+function useId$3(deterministicId) {
+	const [id, setId] = import_react$36.useState(useReactId());
 	useLayoutEffect2(() => {
 		if (!deterministicId) setId((reactId) => reactId ?? String(count$3++));
 	}, [deterministicId]);
 	return deterministicId || (id ? `radix-${id}` : "");
 }
-var import_react$35, __defProp$14, __name$14, useReactId, count$3;
+var import_react$36, __defProp$14, __name$14, useReactId, count$3;
 var init_dist$15 = __esmMin((() => {
-	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$36 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$14 = Object.defineProperty;
 	__name$14 = (target, value) => __defProp$14(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactId = import_react$35[" useId ".trim().toString()] || (() => void 0);
+	useReactId = import_react$36[" useId ".trim().toString()] || (() => void 0);
 	count$3 = 0;
-	__name$14(useId$2, "useId");
+	__name$14(useId$3, "useId");
 }));
-//#endregion
-//#region node_modules/@radix-ui/primitive/dist/internal/is-development.false.mjs
+// node_modules/@radix-ui/primitive/dist/internal/is-development.false.mjs
 var init_is_development_false = __esmMin((() => {}));
-//#endregion
-//#region node_modules/@radix-ui/react-use-effect-event/dist/index.mjs
+// node_modules/@radix-ui/react-use-effect-event/dist/index.mjs
 function useEffectEvent(callback) {
 	if (typeof useReactEffectEvent === "function") return useReactEffectEvent(callback);
-	const ref = import_react$34.useRef(() => {
+	const ref = import_react$35.useRef(() => {
 		throw new Error("Cannot call an event handler while rendering.");
 	});
 	if (typeof useReactInsertionEffect === "function") useReactInsertionEffect(() => {
@@ -11870,30 +11851,29 @@ function useEffectEvent(callback) {
 	else useLayoutEffect2(() => {
 		ref.current = callback;
 	});
-	return import_react$34.useMemo(() => ((...args) => ref.current?.(...args)), []);
+	return import_react$35.useMemo(() => ((...args) => ref.current?.(...args)), []);
 }
-var import_react$34, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
+var import_react$35, __defProp$13, __name$13, useReactEffectEvent, useReactInsertionEffect;
 var init_dist$14 = __esmMin((() => {
 	init_dist$16();
-	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$13 = Object.defineProperty;
 	__name$13 = (target, value) => __defProp$13(target, "name", {
 		value,
 		configurable: true
 	});
-	useReactEffectEvent = import_react$34[" useEffectEvent ".trim().toString()];
-	useReactInsertionEffect = import_react$34[" useInsertionEffect ".trim().toString()];
+	useReactEffectEvent = import_react$35[" useEffectEvent ".trim().toString()];
+	useReactInsertionEffect = import_react$35[" useInsertionEffect ".trim().toString()];
 	__name$13(useEffectEvent, "useEffectEvent");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-use-controllable-state/dist/index.mjs
+// node_modules/@radix-ui/react-use-controllable-state/dist/index.mjs
 function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __name$12(() => {}, "onChange"), caller }) {
 	const [uncontrolledProp, setUncontrolledProp, onChangeRef] = useUncontrolledState({
 		defaultProp,
 		onChange
 	});
 	const isControlled = prop !== void 0;
-	return [isControlled ? prop : uncontrolledProp, import_react$32.useCallback((nextValue) => {
+	return [isControlled ? prop : uncontrolledProp, import_react$33.useCallback((nextValue) => {
 		if (isControlled) {
 			const value2 = isFunction$1(nextValue) ? nextValue(prop) : nextValue;
 			if (value2 !== prop) onChangeRef.current?.(value2);
@@ -11906,13 +11886,13 @@ function useControllableState({ prop, defaultProp, onChange = /* @__PURE__ */ __
 	])];
 }
 function useUncontrolledState({ defaultProp, onChange }) {
-	const [value, setValue] = import_react$32.useState(defaultProp);
-	const prevValueRef = import_react$32.useRef(value);
-	const onChangeRef = import_react$32.useRef(onChange);
+	const [value, setValue] = import_react$33.useState(defaultProp);
+	const prevValueRef = import_react$33.useRef(value);
+	const onChangeRef = import_react$33.useRef(onChange);
 	useInsertionEffect(() => {
 		onChangeRef.current = onChange;
 	}, [onChange]);
-	import_react$32.useEffect(() => {
+	import_react$33.useEffect(() => {
 		if (prevValueRef.current !== value) {
 			onChangeRef.current?.(value);
 			prevValueRef.current = value;
@@ -11936,7 +11916,7 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		state: defaultProp
 	}];
 	if (init) args.push(init);
-	const [internalState, dispatch] = import_react$33.useReducer((state2, action) => {
+	const [internalState, dispatch] = import_react$34.useReducer((state2, action) => {
 		if (action.type === SYNC_STATE) return {
 			...state2,
 			state: action.state
@@ -11946,8 +11926,8 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		return next;
 	}, ...args);
 	const uncontrolledState = internalState.state;
-	const prevValueRef = import_react$33.useRef(uncontrolledState);
-	import_react$33.useEffect(() => {
+	const prevValueRef = import_react$34.useRef(uncontrolledState);
+	import_react$34.useEffect(() => {
 		if (prevValueRef.current !== uncontrolledState) {
 			prevValueRef.current = uncontrolledState;
 			if (!isControlled) onChange(uncontrolledState);
@@ -11957,14 +11937,14 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 		prevValueRef,
 		isControlled
 	]);
-	const state = import_react$33.useMemo(() => {
+	const state = import_react$34.useMemo(() => {
 		if (controlledState !== void 0) return {
 			...internalState,
 			state: controlledState
 		};
 		return internalState;
 	}, [internalState, controlledState]);
-	import_react$33.useEffect(() => {
+	import_react$34.useEffect(() => {
 		if (isControlled && !Object.is(controlledState, internalState.state)) dispatch({
 			type: SYNC_STATE,
 			state: controlledState
@@ -11976,36 +11956,35 @@ function useControllableStateReducer(reducer, userArgs, initialArg, init) {
 	]);
 	return [state, dispatch];
 }
-var import_react$32, import_react$33, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
+var import_react$33, import_react$34, __defProp$12, __name$12, useInsertionEffect, SYNC_STATE;
 var init_dist$13 = __esmMin((() => {
-	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_is_development_false();
 	init_dist$16();
-	import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$34 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$14();
 	__defProp$12 = Object.defineProperty;
 	__name$12 = (target, value) => __defProp$12(target, "name", {
 		value,
 		configurable: true
 	});
-	useInsertionEffect = import_react$32[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
+	useInsertionEffect = import_react$33[" useInsertionEffect ".trim().toString()] || useLayoutEffect2;
 	__name$12(useControllableState, "useControllableState");
 	__name$12(useUncontrolledState, "useUncontrolledState");
 	__name$12(isFunction$1, "isFunction");
 	SYNC_STATE = Symbol("RADIX:SYNC_STATE");
 	__name$12(useControllableStateReducer, "useControllableStateReducer");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-primitive/dist/index.mjs
+// node_modules/@radix-ui/react-primitive/dist/index.mjs
 function dispatchDiscreteCustomEvent(target, event) {
 	if (target) import_react_dom$5.flushSync(() => target.dispatchEvent(event));
 }
-var import_react$31, import_react_dom$5, import_jsx_runtime$18, __defProp$11, __name$11, Primitive;
+var import_react$32, import_react_dom$5, import_jsx_runtime$19, __defProp$11, __name$11, Primitive;
 var init_dist$12 = __esmMin((() => {
-	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$5 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$19();
-	import_jsx_runtime$18 = require_jsx_runtime();
+	import_jsx_runtime$19 = require_jsx_runtime();
 	__defProp$11 = Object.defineProperty;
 	__name$11 = (target, value) => __defProp$11(target, "name", {
 		value,
@@ -12031,11 +12010,11 @@ var init_dist$12 = __esmMin((() => {
 		"ul"
 	].reduce((primitive, node) => {
 		const Slot = /* @__PURE__ */ createSlot(`Primitive.${node}`);
-		const Node = import_react$31.forwardRef((props, forwardedRef) => {
+		const Node = import_react$32.forwardRef((props, forwardedRef) => {
 			const { asChild, ...primitiveProps } = props;
 			const Comp = asChild ? Slot : node;
 			if (typeof window !== "undefined") window[Symbol.for("radix-ui")] = true;
-			return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Comp, {
+			return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Comp, {
 				...primitiveProps,
 				ref: forwardedRef
 			});
@@ -12048,18 +12027,17 @@ var init_dist$12 = __esmMin((() => {
 	}, {});
 	__name$11(dispatchDiscreteCustomEvent, "dispatchDiscreteCustomEvent");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-use-callback-ref/dist/index.mjs
+// node_modules/@radix-ui/react-use-callback-ref/dist/index.mjs
 function useCallbackRef$1(callback) {
-	const callbackRef = import_react$30.useRef(callback);
-	import_react$30.useEffect(() => {
+	const callbackRef = import_react$31.useRef(callback);
+	import_react$31.useEffect(() => {
 		callbackRef.current = callback;
 	});
-	return import_react$30.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
+	return import_react$31.useMemo(() => ((...args) => callbackRef.current?.(...args)), []);
 }
-var import_react$30, __defProp$10, __name$10;
+var import_react$31, __defProp$10, __name$10;
 var init_dist$11 = __esmMin((() => {
-	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$10 = Object.defineProperty;
 	__name$10 = (target, value) => __defProp$10(target, "name", {
 		value,
@@ -12067,12 +12045,11 @@ var init_dist$11 = __esmMin((() => {
 	});
 	__name$10(useCallbackRef$1, "useCallbackRef");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs
+// node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs
 function useDismissableLayerSurface() {
-	const context = import_react$29.useContext(DismissableLayerContext);
-	const [node, setNode] = import_react$29.useState(null);
-	import_react$29.useEffect(() => {
+	const context = import_react$30.useContext(DismissableLayerContext);
+	const [node, setNode] = import_react$30.useState(null);
+	import_react$30.useEffect(() => {
 		if (!node) return;
 		context.dismissableSurfaces.add(node);
 		return () => {
@@ -12084,11 +12061,11 @@ function useDismissableLayerSurface() {
 function usePointerDownOutside(onPointerDownOutside, args) {
 	const { ownerDocument = globalThis?.document, deferPointerDownOutside = false, isDeferredPointerDownOutsideRef, dismissableSurfaces, shouldHandlePointerDownOutside = IS_TRUE } = args;
 	const handlePointerDownOutside = useCallbackRef$1(onPointerDownOutside);
-	const isPointerInsideReactTreeRef = import_react$29.useRef(false);
-	const isPointerDownOutsideRef = import_react$29.useRef(false);
-	const interceptedOutsideInteractionEventsRef = import_react$29.useRef(/* @__PURE__ */ new Map());
-	const handleClickRef = import_react$29.useRef(() => {});
-	import_react$29.useEffect(() => {
+	const isPointerInsideReactTreeRef = import_react$30.useRef(false);
+	const isPointerDownOutsideRef = import_react$30.useRef(false);
+	const interceptedOutsideInteractionEventsRef = import_react$30.useRef(/* @__PURE__ */ new Map());
+	const handleClickRef = import_react$30.useRef(() => {});
+	import_react$30.useEffect(() => {
 		function resetOutsideInteraction() {
 			isPointerDownOutsideRef.current = false;
 			isDeferredPointerDownOutsideRef.current = false;
@@ -12179,8 +12156,8 @@ function usePointerDownOutside(onPointerDownOutside, args) {
 }
 function useFocusOutside(onFocusOutside, ownerDocument = globalThis?.document) {
 	const handleFocusOutside = useCallbackRef$1(onFocusOutside);
-	const isFocusInsideReactTreeRef = import_react$29.useRef(false);
-	import_react$29.useEffect(() => {
+	const isFocusInsideReactTreeRef = import_react$30.useRef(false);
+	import_react$30.useEffect(() => {
 		const handleFocus = /* @__PURE__ */ __name$9((event) => {
 			if (event.target && !isFocusInsideReactTreeRef.current) handleAndDispatchCustomEvent(FOCUS_OUTSIDE, handleFocusOutside, { originalEvent: event }, { discrete: false });
 		}, "handleFocus");
@@ -12207,14 +12184,14 @@ function handleAndDispatchCustomEvent(name, handler, detail, { discrete }) {
 	if (discrete) dispatchDiscreteCustomEvent(target, event);
 	else target.dispatchEvent(event);
 }
-var import_react$29, import_jsx_runtime$17, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
+var import_react$30, import_jsx_runtime$18, __defProp$9, __name$9, CONTEXT_UPDATE, POINTER_DOWN_OUTSIDE, FOCUS_OUTSIDE, originalBodyPointerEvents, DismissableLayerContext, DismissableLayer, IS_TRUE;
 var init_dist$10 = __esmMin((() => {
-	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$12();
 	init_dist$20();
 	init_dist$11();
-	import_jsx_runtime$17 = require_jsx_runtime();
+	import_jsx_runtime$18 = require_jsx_runtime();
 	__defProp$9 = Object.defineProperty;
 	__name$9 = (target, value) => __defProp$9(target, "name", {
 		value,
@@ -12223,18 +12200,18 @@ var init_dist$10 = __esmMin((() => {
 	CONTEXT_UPDATE = "dismissableLayer.update";
 	POINTER_DOWN_OUTSIDE = "dismissableLayer.pointerDownOutside";
 	FOCUS_OUTSIDE = "dismissableLayer.focusOutside";
-	DismissableLayerContext = import_react$29.createContext({
+	DismissableLayerContext = import_react$30.createContext({
 		layers: /* @__PURE__ */ new Set(),
 		layersWithOutsidePointerEventsDisabled: /* @__PURE__ */ new Set(),
 		branches: /* @__PURE__ */ new Set(),
 		dismissableSurfaces: /* @__PURE__ */ new Set()
 	});
-	DismissableLayer = /* @__PURE__ */ import_react$29.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
+	DismissableLayer = /* @__PURE__ */ import_react$30.forwardRef(/* @__PURE__ */ __name$9(function DismissableLayer2(props, forwardedRef) {
 		const { disableOutsidePointerEvents = false, deferPointerDownOutside = false, onEscapeKeyDown, onPointerDownOutside, onFocusOutside, onInteractOutside, onDismiss, ...layerProps } = props;
-		const context = import_react$29.useContext(DismissableLayerContext);
-		const [node, setNode] = import_react$29.useState(null);
+		const context = import_react$30.useContext(DismissableLayerContext);
+		const [node, setNode] = import_react$30.useState(null);
 		const ownerDocument = node?.ownerDocument ?? globalThis?.document;
-		const [, force] = import_react$29.useState({});
+		const [, force] = import_react$30.useState({});
 		const composedRefs = useComposedRefs(forwardedRef, setNode);
 		const layers = Array.from(context.layers);
 		const [highestLayerWithOutsidePointerEventsDisabled] = [...context.layersWithOutsidePointerEventsDisabled].slice(-1);
@@ -12242,7 +12219,7 @@ var init_dist$10 = __esmMin((() => {
 		const index = node ? layers.indexOf(node) : -1;
 		const isBodyPointerEventsDisabled = context.layersWithOutsidePointerEventsDisabled.size > 0;
 		const isPointerEventsEnabled = index >= highestLayerWithOutsidePointerEventsDisabledIndex;
-		const isDeferredPointerDownOutsideRef = import_react$29.useRef(false);
+		const isDeferredPointerDownOutsideRef = import_react$30.useRef(false);
 		const pointerDownOutside = usePointerDownOutside((event) => {
 			onPointerDownOutside?.(event);
 			onInteractOutside?.(event);
@@ -12252,7 +12229,7 @@ var init_dist$10 = __esmMin((() => {
 			deferPointerDownOutside,
 			isDeferredPointerDownOutsideRef,
 			dismissableSurfaces: context.dismissableSurfaces,
-			shouldHandlePointerDownOutside: import_react$29.useCallback((target) => {
+			shouldHandlePointerDownOutside: import_react$30.useCallback((target) => {
 				if (!(target instanceof Node)) return false;
 				const isPointerDownOnBranch = [...context.branches].some((branch) => branch.contains(target));
 				return isPointerEventsEnabled && !isPointerDownOnBranch;
@@ -12275,7 +12252,7 @@ var init_dist$10 = __esmMin((() => {
 				onDismiss();
 			}
 		});
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			if (!isHighestLayer) return;
 			ownerDocument.addEventListener("keydown", handleKeyDown, { capture: true });
 			return () => ownerDocument.removeEventListener("keydown", handleKeyDown, { capture: true });
@@ -12284,7 +12261,7 @@ var init_dist$10 = __esmMin((() => {
 			isHighestLayer,
 			handleKeyDown
 		]);
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			if (!node) return;
 			if (disableOutsidePointerEvents) {
 				if (context.layersWithOutsidePointerEventsDisabled.size === 0) {
@@ -12307,7 +12284,7 @@ var init_dist$10 = __esmMin((() => {
 			disableOutsidePointerEvents,
 			context
 		]);
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			return () => {
 				if (!node) return;
 				context.layers.delete(node);
@@ -12315,12 +12292,12 @@ var init_dist$10 = __esmMin((() => {
 				dispatchUpdate();
 			};
 		}, [node, context]);
-		import_react$29.useEffect(() => {
+		import_react$30.useEffect(() => {
 			const handleUpdate = /* @__PURE__ */ __name$9(() => force({}), "handleUpdate");
 			document.addEventListener(CONTEXT_UPDATE, handleUpdate);
 			return () => document.removeEventListener(CONTEXT_UPDATE, handleUpdate);
 		}, []);
-		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Primitive.div, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Primitive.div, {
 			...layerProps,
 			ref: composedRefs,
 			style: {
@@ -12339,8 +12316,7 @@ var init_dist$10 = __esmMin((() => {
 	__name$9(dispatchUpdate, "dispatchUpdate");
 	__name$9(handleAndDispatchCustomEvent, "handleAndDispatchCustomEvent");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-focus-scope/dist/index.mjs
+// node_modules/@radix-ui/react-focus-scope/dist/index.mjs
 function focusFirst(candidates, { select = false } = {}) {
 	const previouslyFocusedElement = document.activeElement;
 	for (const candidate of candidates) {
@@ -12409,13 +12385,13 @@ function arrayRemove(array, item) {
 function removeLinks(items) {
 	return items.filter((item) => item.tagName !== "A");
 }
-var import_react$28, import_jsx_runtime$16, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
+var import_react$29, import_jsx_runtime$17, __defProp$8, __name$8, AUTOFOCUS_ON_MOUNT, AUTOFOCUS_ON_UNMOUNT, EVENT_OPTIONS, FocusScope, focusScopesStack;
 var init_dist$9 = __esmMin((() => {
-	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$20();
 	init_dist$12();
 	init_dist$11();
-	import_jsx_runtime$16 = require_jsx_runtime();
+	import_jsx_runtime$17 = require_jsx_runtime();
 	__defProp$8 = Object.defineProperty;
 	__name$8 = (target, value) => __defProp$8(target, "name", {
 		value,
@@ -12427,14 +12403,14 @@ var init_dist$9 = __esmMin((() => {
 		bubbles: false,
 		cancelable: true
 	};
-	FocusScope = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
+	FocusScope = /* @__PURE__ */ import_react$29.forwardRef(/* @__PURE__ */ __name$8(function FocusScope2(props, forwardedRef) {
 		const { loop = false, trapped = false, onMountAutoFocus: onMountAutoFocusProp, onUnmountAutoFocus: onUnmountAutoFocusProp, ...scopeProps } = props;
-		const [container, setContainer] = import_react$28.useState(null);
+		const [container, setContainer] = import_react$29.useState(null);
 		const onMountAutoFocus = useCallbackRef$1(onMountAutoFocusProp);
 		const onUnmountAutoFocus = useCallbackRef$1(onUnmountAutoFocusProp);
-		const lastFocusedElementRef = import_react$28.useRef(null);
+		const lastFocusedElementRef = import_react$29.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContainer);
-		const focusScope = import_react$28.useRef({
+		const focusScope = import_react$29.useRef({
 			paused: false,
 			pause() {
 				this.paused = true;
@@ -12443,7 +12419,7 @@ var init_dist$9 = __esmMin((() => {
 				this.paused = false;
 			}
 		}).current;
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (trapped) {
 				let handleFocusIn2 = function(event) {
 					if (focusScope.paused || !container) return;
@@ -12480,7 +12456,7 @@ var init_dist$9 = __esmMin((() => {
 			container,
 			focusScope.paused
 		]);
-		import_react$28.useEffect(() => {
+		import_react$29.useEffect(() => {
 			if (container) {
 				focusScopesStack.add(focusScope);
 				const previouslyFocusedElement = document.activeElement;
@@ -12511,7 +12487,7 @@ var init_dist$9 = __esmMin((() => {
 			onUnmountAutoFocus,
 			focusScope
 		]);
-		const handleKeyDown = import_react$28.useCallback((event) => {
+		const handleKeyDown = import_react$29.useCallback((event) => {
 			if (!loop && !trapped) return;
 			if (focusScope.paused) return;
 			const isTabKey = event.key === "Tab" && !event.altKey && !event.ctrlKey && !event.metaKey;
@@ -12534,7 +12510,7 @@ var init_dist$9 = __esmMin((() => {
 			trapped,
 			focusScope.paused
 		]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Primitive.div, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Primitive.div, {
 			tabIndex: -1,
 			...scopeProps,
 			ref: composedRefs,
@@ -12553,44 +12529,42 @@ var init_dist$9 = __esmMin((() => {
 	__name$8(arrayRemove, "arrayRemove");
 	__name$8(removeLinks, "removeLinks");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-portal/dist/index.mjs
-var import_react$27, import_react_dom$4, import_jsx_runtime$15, __defProp$7, __name$7, Portal$1;
+// node_modules/@radix-ui/react-portal/dist/index.mjs
+var import_react$28, import_react_dom$4, import_jsx_runtime$16, __defProp$7, __name$7, Portal$1;
 var init_dist$8 = __esmMin((() => {
-	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$4 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_dist$12();
 	init_dist$16();
-	import_jsx_runtime$15 = require_jsx_runtime();
+	import_jsx_runtime$16 = require_jsx_runtime();
 	__defProp$7 = Object.defineProperty;
 	__name$7 = (target, value) => __defProp$7(target, "name", {
 		value,
 		configurable: true
 	});
-	Portal$1 = /* @__PURE__ */ import_react$27.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
+	Portal$1 = /* @__PURE__ */ import_react$28.forwardRef(/* @__PURE__ */ __name$7(function Portal2(props, forwardedRef) {
 		const { container: containerProp, ...portalProps } = props;
-		const [mounted, setMounted] = import_react$27.useState(false);
+		const [mounted, setMounted] = import_react$28.useState(false);
 		useLayoutEffect2(() => setMounted(true), []);
 		const container = containerProp || mounted && globalThis?.document?.body;
-		return container ? import_react_dom$4.createPortal(/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.div, {
+		return container ? import_react_dom$4.createPortal(/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Primitive.div, {
 			...portalProps,
 			ref: forwardedRef
 		}), container) : null;
 	}, "Portal"));
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-presence/dist/index.mjs
+// node_modules/@radix-ui/react-presence/dist/index.mjs
 function useStateMachine(initialState, machine) {
-	return import_react$26.useReducer((state, event) => {
+	return import_react$27.useReducer((state, event) => {
 		return machine[state][event] ?? state;
 	}, initialState);
 }
 function usePresence(present) {
-	const [node, setNode] = import_react$25.useState();
-	const stylesRef = import_react$25.useRef(null);
-	const prevPresentRef = import_react$25.useRef(present);
-	const prevAnimationNameRef = import_react$25.useRef("none");
-	const mountAnimationNameRef = import_react$25.useRef(void 0);
+	const [node, setNode] = import_react$26.useState();
+	const stylesRef = import_react$26.useRef(null);
+	const prevPresentRef = import_react$26.useRef(present);
+	const prevAnimationNameRef = import_react$26.useRef("none");
+	const mountAnimationNameRef = import_react$26.useRef(void 0);
 	const [state, send] = useStateMachine(present ? "mounted" : "unmounted", {
 		mounted: {
 			UNMOUNT: "unmounted",
@@ -12602,7 +12576,7 @@ function usePresence(present) {
 		},
 		unmounted: { MOUNT: "mounted" }
 	});
-	import_react$25.useEffect(() => {
+	import_react$26.useEffect(() => {
 		if (state === "mounted") {
 			prevAnimationNameRef.current = mountAnimationNameRef.current ?? getAnimationName(stylesRef.current);
 			mountAnimationNameRef.current = void 0;
@@ -12656,7 +12630,7 @@ function usePresence(present) {
 	}, [node, send]);
 	return {
 		isPresent: ["mounted", "unmountSuspended"].includes(state),
-		ref: import_react$25.useCallback((node2) => {
+		ref: import_react$26.useCallback((node2) => {
 			if (node2) {
 				const styles = getComputedStyle(node2);
 				stylesRef.current = styles;
@@ -12671,9 +12645,9 @@ function setRef(ref, value) {
 	else if (ref !== null && ref !== void 0) ref.current = value;
 }
 function useStableComposedRefs(...refs) {
-	const refsRef = import_react$25.useRef(refs);
+	const refsRef = import_react$26.useRef(refs);
 	refsRef.current = refs;
-	return import_react$25.useCallback((node) => {
+	return import_react$26.useCallback((node) => {
 		const currentRefs = refsRef.current;
 		let hasCleanup = false;
 		const cleanups = currentRefs.map((ref) => {
@@ -12702,11 +12676,11 @@ function getElementRef(element) {
 	if (mayWarn) return element.props.ref;
 	return element.props.ref || element.ref;
 }
-var import_react$25, import_react$26, __defProp$6, __name$6, Presence;
+var import_react$26, import_react$27, __defProp$6, __name$6, Presence;
 var init_dist$7 = __esmMin((() => {
-	import_react$25 = /* @__PURE__ */ __toESM(require_react(), 1);
-	init_dist$16();
 	import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
+	init_dist$16();
+	import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$6 = Object.defineProperty;
 	__name$6 = (target, value) => __defProp$6(target, "name", {
 		value,
@@ -12716,9 +12690,9 @@ var init_dist$7 = __esmMin((() => {
 	Presence = /* @__PURE__ */ __name$6((props) => {
 		const { present, children } = props;
 		const presence = usePresence(present);
-		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$25.Children.only(children);
+		const child = typeof children === "function" ? children({ present: presence.isPresent }) : import_react$26.Children.only(children);
 		const ref = useStableComposedRefs(presence.ref, getElementRef(child));
-		return typeof children === "function" || presence.isPresent ? import_react$25.cloneElement(child, { ref }) : null;
+		return typeof children === "function" || presence.isPresent ? import_react$26.cloneElement(child, { ref }) : null;
 	}, "Presence");
 	__name$6(usePresence, "usePresence");
 	__name$6(setRef, "setRef");
@@ -12726,14 +12700,13 @@ var init_dist$7 = __esmMin((() => {
 	__name$6(getAnimationName, "getAnimationName");
 	__name$6(getElementRef, "getElementRef");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-focus-guards/dist/index.mjs
+// node_modules/@radix-ui/react-focus-guards/dist/index.mjs
 function FocusGuards(props) {
 	useFocusGuards();
 	return props.children;
 }
 function useFocusGuards() {
-	import_react$24.useEffect(() => {
+	import_react$25.useEffect(() => {
 		if (!guards) guards = {
 			start: createFocusGuard(),
 			end: createFocusGuard()
@@ -12762,9 +12735,9 @@ function createFocusGuard() {
 	element.style.pointerEvents = "none";
 	return element;
 }
-var import_react$24, __defProp$5, __name$5, count$2, guards;
+var import_react$25, __defProp$5, __name$5, count$2, guards;
 var init_dist$6 = __esmMin((() => {
-	import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$25 = /* @__PURE__ */ __toESM(require_react(), 1);
 	__defProp$5 = Object.defineProperty;
 	__name$5 = (target, value) => __defProp$5(target, "name", {
 		value,
@@ -12776,8 +12749,7 @@ var init_dist$6 = __esmMin((() => {
 	__name$5(useFocusGuards, "useFocusGuards");
 	__name$5(createFocusGuard, "createFocusGuard");
 }));
-//#endregion
-//#region node_modules/tslib/tslib.es6.mjs
+// node_modules/tslib/tslib.es6.mjs
 function __rest(s, e) {
 	var t = {};
 	for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0) t[p] = s[p];
@@ -12808,8 +12780,7 @@ var init_tslib_es6 = __esmMin((() => {
 		return __assign.apply(this, arguments);
 	};
 }));
-//#endregion
-//#region node_modules/react-remove-scroll-bar/dist/es2015/constants.js
+// node_modules/react-remove-scroll-bar/dist/es2015/constants.js
 var zeroRightClassName, fullWidthClassName, noScrollbarsClassName, removedBarSizeVariable;
 var init_constants = __esmMin((() => {
 	zeroRightClassName = "right-scroll-bar-position";
@@ -12817,8 +12788,7 @@ var init_constants = __esmMin((() => {
 	noScrollbarsClassName = "with-scroll-bars-hidden";
 	removedBarSizeVariable = "--removed-body-scroll-bar-size";
 }));
-//#endregion
-//#region node_modules/use-callback-ref/dist/es2015/assignRef.js
+// node_modules/use-callback-ref/dist/es2015/assignRef.js
 /**
 * Assigns a value for a given ref, no matter of the ref format
 * @param {RefObject} ref - a callback function or ref object
@@ -12838,8 +12808,7 @@ function assignRef(ref, value) {
 	return ref;
 }
 var init_assignRef = __esmMin((() => {}));
-//#endregion
-//#region node_modules/use-callback-ref/dist/es2015/useRef.js
+// node_modules/use-callback-ref/dist/es2015/useRef.js
 /**
 * creates a MutableRef with ref change callback
 * @param initialValue - initial ref value
@@ -12855,7 +12824,7 @@ var init_assignRef = __esmMin((() => {}));
 * @returns {MutableRefObject}
 */
 function useCallbackRef(initialValue, callback) {
-	var ref = (0, import_react$23.useState)(function() {
+	var ref = (0, import_react$24.useState)(function() {
 		return {
 			value: initialValue,
 			callback,
@@ -12876,12 +12845,11 @@ function useCallbackRef(initialValue, callback) {
 	ref.callback = callback;
 	return ref.facade;
 }
-var import_react$23;
+var import_react$24;
 var init_useRef = __esmMin((() => {
-	import_react$23 = /* @__PURE__ */ __toESM(require_react());
+	import_react$24 = /* @__PURE__ */ __toESM(require_react());
 }));
-//#endregion
-//#region node_modules/use-callback-ref/dist/es2015/useMergeRef.js
+// node_modules/use-callback-ref/dist/es2015/useMergeRef.js
 /**
 * Merges two or more refs together providing a single interface to set their value
 * @param {RefObject|Ref} refs
@@ -12919,22 +12887,20 @@ function useMergeRefs(refs, defaultValue) {
 	}, [refs]);
 	return callbackRef;
 }
-var import_react$22, useIsomorphicLayoutEffect, currentValues;
+var import_react$23, useIsomorphicLayoutEffect, currentValues;
 var init_useMergeRef = __esmMin((() => {
-	import_react$22 = /* @__PURE__ */ __toESM(require_react());
+	import_react$23 = /* @__PURE__ */ __toESM(require_react());
 	init_assignRef();
 	init_useRef();
-	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$22.useLayoutEffect : import_react$22.useEffect;
+	useIsomorphicLayoutEffect = typeof window !== "undefined" ? import_react$23.useLayoutEffect : import_react$23.useEffect;
 	currentValues = /* @__PURE__ */ new WeakMap();
 }));
-//#endregion
-//#region node_modules/use-callback-ref/dist/es2015/index.js
+// node_modules/use-callback-ref/dist/es2015/index.js
 var init_es2015$6 = __esmMin((() => {
 	init_useRef();
 	init_useMergeRef();
 }));
-//#endregion
-//#region node_modules/use-sidecar/dist/es2015/medium.js
+// node_modules/use-sidecar/dist/es2015/medium.js
 function ItoI(a) {
 	return a;
 }
@@ -13016,52 +12982,48 @@ function createSidecarMedium(options) {
 var init_medium$1 = __esmMin((() => {
 	init_tslib_es6();
 }));
-//#endregion
-//#region node_modules/use-sidecar/dist/es2015/exports.js
+// node_modules/use-sidecar/dist/es2015/exports.js
 function exportSidecar(medium, exported) {
 	medium.useMedium(exported);
 	return SideCar;
 }
-var import_react$21, SideCar;
+var import_react$22, SideCar;
 var init_exports = __esmMin((() => {
 	init_tslib_es6();
-	import_react$21 = /* @__PURE__ */ __toESM(require_react());
+	import_react$22 = /* @__PURE__ */ __toESM(require_react());
 	SideCar = function(_a) {
 		var sideCar = _a.sideCar, rest = __rest(_a, ["sideCar"]);
 		if (!sideCar) throw new Error("Sidecar: please provide `sideCar` property to import the right car");
 		var Target = sideCar.read();
 		if (!Target) throw new Error("Sidecar medium not found");
-		return import_react$21.createElement(Target, __assign({}, rest));
+		return import_react$22.createElement(Target, __assign({}, rest));
 	};
 	SideCar.isSideCarExport = true;
 }));
-//#endregion
-//#region node_modules/use-sidecar/dist/es2015/index.js
+// node_modules/use-sidecar/dist/es2015/index.js
 var init_es2015$5 = __esmMin((() => {
 	init_tslib_es6();
 	init_medium$1();
 	init_exports();
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/medium.js
+// node_modules/react-remove-scroll/dist/es2015/medium.js
 var effectCar;
 var init_medium = __esmMin((() => {
 	init_es2015$5();
 	effectCar = createSidecarMedium();
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/UI.js
-var import_react$20, nothing, RemoveScroll;
+// node_modules/react-remove-scroll/dist/es2015/UI.js
+var import_react$21, nothing, RemoveScroll;
 var init_UI = __esmMin((() => {
 	init_tslib_es6();
-	import_react$20 = /* @__PURE__ */ __toESM(require_react());
+	import_react$21 = /* @__PURE__ */ __toESM(require_react());
 	init_constants();
 	init_es2015$6();
 	init_medium();
 	nothing = function() {};
-	RemoveScroll = import_react$20.forwardRef(function(props, parentRef) {
-		var ref = import_react$20.useRef(null);
-		var _a = import_react$20.useState({
+	RemoveScroll = import_react$21.forwardRef(function(props, parentRef) {
+		var ref = import_react$21.useRef(null);
+		var _a = import_react$21.useState({
 			onScrollCapture: nothing,
 			onWheelCapture: nothing,
 			onTouchMoveCapture: nothing
@@ -13084,7 +13046,7 @@ var init_UI = __esmMin((() => {
 		var SideCar = sideCar;
 		var containerRef = useMergeRefs([ref, parentRef]);
 		var containerProps = __assign(__assign({}, rest), callbacks);
-		return import_react$20.createElement(import_react$20.Fragment, null, enabled && import_react$20.createElement(SideCar, {
+		return import_react$21.createElement(import_react$21.Fragment, null, enabled && import_react$21.createElement(SideCar, {
 			sideCar: effectCar,
 			removeScrollBar,
 			shards,
@@ -13095,7 +13057,7 @@ var init_UI = __esmMin((() => {
 			allowPinchZoom: !!allowPinchZoom,
 			lockRef: ref,
 			gapMode
-		}), forwardProps ? import_react$20.cloneElement(import_react$20.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$20.createElement(Container, __assign({}, containerProps, {
+		}), forwardProps ? import_react$21.cloneElement(import_react$21.Children.only(children), __assign(__assign({}, containerProps), { ref: containerRef })) : import_react$21.createElement(Container, __assign({}, containerProps, {
 			className,
 			ref: containerRef
 		}), children));
@@ -13115,8 +13077,7 @@ var init_es2015$4 = __esmMin((() => {
 		if (typeof __webpack_nonce__ !== "undefined") return __webpack_nonce__;
 	};
 }));
-//#endregion
-//#region node_modules/react-style-singleton/dist/es2015/singleton.js
+// node_modules/react-style-singleton/dist/es2015/singleton.js
 function makeStyleTag() {
 	if (!document) return null;
 	var tag = document.createElement("style");
@@ -13158,16 +13119,15 @@ var init_singleton = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/react-style-singleton/dist/es2015/hook.js
-var import_react$19, styleHookSingleton;
+// node_modules/react-style-singleton/dist/es2015/hook.js
+var import_react$20, styleHookSingleton;
 var init_hook = __esmMin((() => {
-	import_react$19 = /* @__PURE__ */ __toESM(require_react());
+	import_react$20 = /* @__PURE__ */ __toESM(require_react());
 	init_singleton();
 	styleHookSingleton = function() {
 		var sheet = stylesheetSingleton();
 		return function(styles, isDynamic) {
-			import_react$19.useEffect(function() {
+			import_react$20.useEffect(function() {
 				sheet.add(styles);
 				return function() {
 					sheet.remove();
@@ -13176,8 +13136,7 @@ var init_hook = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/react-style-singleton/dist/es2015/component.js
+// node_modules/react-style-singleton/dist/es2015/component.js
 var styleSingleton;
 var init_component$1 = __esmMin((() => {
 	init_hook();
@@ -13191,15 +13150,13 @@ var init_component$1 = __esmMin((() => {
 		return Sheet;
 	};
 }));
-//#endregion
-//#region node_modules/react-style-singleton/dist/es2015/index.js
+// node_modules/react-style-singleton/dist/es2015/index.js
 var init_es2015$3 = __esmMin((() => {
 	init_component$1();
 	init_singleton();
 	init_hook();
 }));
-//#endregion
-//#region node_modules/react-remove-scroll-bar/dist/es2015/utils.js
+// node_modules/react-remove-scroll-bar/dist/es2015/utils.js
 var zeroGap, parse$1, getOffset, getGapWidth;
 var init_utils = __esmMin((() => {
 	zeroGap = {
@@ -13236,11 +13193,10 @@ var init_utils = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/react-remove-scroll-bar/dist/es2015/component.js
-var import_react$18, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
+// node_modules/react-remove-scroll-bar/dist/es2015/component.js
+var import_react$19, Style, lockAttribute, getStyles, getCurrentUseCounter, useLockAttribute, RemoveScrollBar;
 var init_component = __esmMin((() => {
-	import_react$18 = /* @__PURE__ */ __toESM(require_react());
+	import_react$19 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$3();
 	init_constants();
 	init_utils();
@@ -13260,7 +13216,7 @@ var init_component = __esmMin((() => {
 		return isFinite(counter) ? counter : 0;
 	};
 	useLockAttribute = function() {
-		import_react$18.useEffect(function() {
+		import_react$19.useEffect(function() {
 			document.body.setAttribute(lockAttribute, (getCurrentUseCounter() + 1).toString());
 			return function() {
 				var newCounter = getCurrentUseCounter() - 1;
@@ -13272,19 +13228,17 @@ var init_component = __esmMin((() => {
 	RemoveScrollBar = function(_a) {
 		var noRelative = _a.noRelative, noImportant = _a.noImportant, _b = _a.gapMode, gapMode = _b === void 0 ? "margin" : _b;
 		useLockAttribute();
-		var gap = import_react$18.useMemo(function() {
+		var gap = import_react$19.useMemo(function() {
 			return getGapWidth(gapMode);
 		}, [gapMode]);
-		return import_react$18.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
+		return import_react$19.createElement(Style, { styles: getStyles(gap, !noRelative, gapMode, !noImportant ? "!important" : "") });
 	};
 }));
-//#endregion
-//#region node_modules/react-remove-scroll-bar/dist/es2015/index.js
+// node_modules/react-remove-scroll-bar/dist/es2015/index.js
 var init_es2015$2 = __esmMin((() => {
 	init_component();
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/aggresiveCapture.js
+// node_modules/react-remove-scroll/dist/es2015/aggresiveCapture.js
 var passiveSupported, options, nonPassive;
 var init_aggresiveCapture = __esmMin((() => {
 	passiveSupported = false;
@@ -13300,8 +13254,7 @@ var init_aggresiveCapture = __esmMin((() => {
 	}
 	nonPassive = passiveSupported ? { passive: false } : false;
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/handleScroll.js
+// node_modules/react-remove-scroll/dist/es2015/handleScroll.js
 var alwaysContainsScroll, elementCanBeScrolled, elementCouldBeVScrolled, elementCouldBeHScrolled, locationCouldBeScrolled, getVScrollVariables, getHScrollVariables, elementCouldBeScrolled, getScrollVariables, getDirectionFactor, handleScroll;
 var init_handleScroll = __esmMin((() => {
 	alwaysContainsScroll = function(node) {
@@ -13386,19 +13339,18 @@ var init_handleScroll = __esmMin((() => {
 		return shouldCancelScroll;
 	};
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/SideEffect.js
+// node_modules/react-remove-scroll/dist/es2015/SideEffect.js
 function RemoveScrollSideCar(props) {
-	var shouldPreventQueue = import_react$17.useRef([]);
-	var touchStartRef = import_react$17.useRef([0, 0]);
-	var activeAxis = import_react$17.useRef();
-	var id = import_react$17.useState(idCounter++)[0];
-	var Style = import_react$17.useState(styleSingleton)[0];
-	var lastProps = import_react$17.useRef(props);
-	import_react$17.useEffect(function() {
+	var shouldPreventQueue = import_react$18.useRef([]);
+	var touchStartRef = import_react$18.useRef([0, 0]);
+	var activeAxis = import_react$18.useRef();
+	var id = import_react$18.useState(idCounter++)[0];
+	var Style = import_react$18.useState(styleSingleton)[0];
+	var lastProps = import_react$18.useRef(props);
+	import_react$18.useEffect(function() {
 		lastProps.current = props;
 	}, [props]);
-	import_react$17.useEffect(function() {
+	import_react$18.useEffect(function() {
 		if (props.inert) {
 			document.body.classList.add("block-interactivity-".concat(id));
 			var allow_1 = __spreadArray([props.lockRef.current], (props.shards || []).map(extractRef), true).filter(Boolean);
@@ -13417,7 +13369,7 @@ function RemoveScrollSideCar(props) {
 		props.lockRef.current,
 		props.shards
 	]);
-	var shouldCancelEvent = import_react$17.useCallback(function(event, parent) {
+	var shouldCancelEvent = import_react$18.useCallback(function(event, parent) {
 		if ("touches" in event && event.touches.length === 2 || event.type === "wheel" && event.ctrlKey) return !lastProps.current.allowPinchZoom;
 		var touch = getTouchXY(event);
 		var touchStart = touchStartRef.current;
@@ -13443,7 +13395,7 @@ function RemoveScrollSideCar(props) {
 		var cancelingAxis = activeAxis.current || currentAxis;
 		return handleScroll(cancelingAxis, parent, event, cancelingAxis === "h" ? deltaX : deltaY, true);
 	}, []);
-	var shouldPrevent = import_react$17.useCallback(function(_event) {
+	var shouldPrevent = import_react$18.useCallback(function(_event) {
 		var event = _event;
 		if (!lockStack.length || lockStack[lockStack.length - 1] !== Style) return;
 		var delta = "deltaY" in event ? getDeltaXY(event) : getTouchXY(event);
@@ -13463,7 +13415,7 @@ function RemoveScrollSideCar(props) {
 			}
 		}
 	}, []);
-	var shouldCancel = import_react$17.useCallback(function(name, delta, target, should) {
+	var shouldCancel = import_react$18.useCallback(function(name, delta, target, should) {
 		var event = {
 			name,
 			delta,
@@ -13478,17 +13430,17 @@ function RemoveScrollSideCar(props) {
 			});
 		}, 1);
 	}, []);
-	var scrollTouchStart = import_react$17.useCallback(function(event) {
+	var scrollTouchStart = import_react$18.useCallback(function(event) {
 		touchStartRef.current = getTouchXY(event);
 		activeAxis.current = void 0;
 	}, []);
-	var scrollWheel = import_react$17.useCallback(function(event) {
+	var scrollWheel = import_react$18.useCallback(function(event) {
 		shouldCancel(event.type, getDeltaXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	var scrollTouchMove = import_react$17.useCallback(function(event) {
+	var scrollTouchMove = import_react$18.useCallback(function(event) {
 		shouldCancel(event.type, getTouchXY(event), event.target, shouldCancelEvent(event, props.lockRef.current));
 	}, []);
-	import_react$17.useEffect(function() {
+	import_react$18.useEffect(function() {
 		lockStack.push(Style);
 		props.setCallbacks({
 			onScrollCapture: scrollWheel,
@@ -13508,7 +13460,7 @@ function RemoveScrollSideCar(props) {
 		};
 	}, []);
 	var removeScrollBar = props.removeScrollBar, inert = props.inert;
-	return import_react$17.createElement(import_react$17.Fragment, null, inert ? import_react$17.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$17.createElement(RemoveScrollBar, {
+	return import_react$18.createElement(import_react$18.Fragment, null, inert ? import_react$18.createElement(Style, { styles: generateStyle(id) }) : null, removeScrollBar ? import_react$18.createElement(RemoveScrollBar, {
 		noRelative: props.noRelative,
 		gapMode: props.gapMode
 	}) : null);
@@ -13524,10 +13476,10 @@ function getOutermostShadowParent(node) {
 	}
 	return shadowParent;
 }
-var import_react$17, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
+var import_react$18, getTouchXY, getDeltaXY, extractRef, deltaCompare, generateStyle, idCounter, lockStack;
 var init_SideEffect = __esmMin((() => {
 	init_tslib_es6();
-	import_react$17 = /* @__PURE__ */ __toESM(require_react());
+	import_react$18 = /* @__PURE__ */ __toESM(require_react());
 	init_es2015$2();
 	init_es2015$3();
 	init_aggresiveCapture();
@@ -13550,8 +13502,7 @@ var init_SideEffect = __esmMin((() => {
 	idCounter = 0;
 	lockStack = [];
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/sidecar.js
+// node_modules/react-remove-scroll/dist/es2015/sidecar.js
 var sidecar_default;
 var init_sidecar = __esmMin((() => {
 	init_es2015$5();
@@ -13559,29 +13510,26 @@ var init_sidecar = __esmMin((() => {
 	init_medium();
 	sidecar_default = exportSidecar(effectCar, RemoveScrollSideCar);
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/Combination.js
-var import_react$16, ReactRemoveScroll;
+// node_modules/react-remove-scroll/dist/es2015/Combination.js
+var import_react$17, ReactRemoveScroll;
 var init_Combination = __esmMin((() => {
 	init_tslib_es6();
-	import_react$16 = /* @__PURE__ */ __toESM(require_react());
+	import_react$17 = /* @__PURE__ */ __toESM(require_react());
 	init_UI();
 	init_sidecar();
-	ReactRemoveScroll = import_react$16.forwardRef(function(props, ref) {
-		return import_react$16.createElement(RemoveScroll, __assign({}, props, {
+	ReactRemoveScroll = import_react$17.forwardRef(function(props, ref) {
+		return import_react$17.createElement(RemoveScroll, __assign({}, props, {
 			ref,
 			sideCar: sidecar_default
 		}));
 	});
 	ReactRemoveScroll.classNames = RemoveScroll.classNames;
 }));
-//#endregion
-//#region node_modules/react-remove-scroll/dist/es2015/index.js
+// node_modules/react-remove-scroll/dist/es2015/index.js
 var init_es2015$1 = __esmMin((() => {
 	init_Combination();
 }));
-//#endregion
-//#region node_modules/aria-hidden/dist/es2015/index.js
+// node_modules/aria-hidden/dist/es2015/index.js
 var getDefaultParent, counterMap, uncontrolledNodes, markerMap, lockCount, unwrapHost, correctTargets, applyAttributeToOthers, hideOthers;
 var init_es2015 = __esmMin((() => {
 	getDefaultParent = function(originalTarget) {
@@ -13674,14 +13622,13 @@ var init_es2015 = __esmMin((() => {
 		return applyAttributeToOthers(targets, activeParentNode, markerName, "aria-hidden");
 	};
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-dialog/dist/index.mjs
+// node_modules/@radix-ui/react-dialog/dist/index.mjs
 function getState(open) {
 	return open ? "open" : "closed";
 }
-var import_react$15, import_jsx_runtime$14, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
+var import_react$16, import_jsx_runtime$15, __defProp$4, __name$4, DIALOG_NAME, createDialogContext, createDialogScope, DialogProvider, useDialogContext, Dialog$1, PORTAL_NAME$1, PortalProvider$1, usePortalContext$1, DialogPortal, OVERLAY_NAME, DialogOverlay, Slot, DialogOverlayImpl, CONTENT_NAME$2, DialogContent, DialogContentModal, DialogContentNonModal, DialogContentImpl, TITLE_NAME, DialogTitle, DESCRIPTION_NAME, DialogDescription, CLOSE_NAME, DialogClose;
 var init_dist$5 = __esmMin((() => {
-	import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$16 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -13697,7 +13644,7 @@ var init_dist$5 = __esmMin((() => {
 	init_es2015$1();
 	init_es2015();
 	init_dist$19();
-	import_jsx_runtime$14 = require_jsx_runtime();
+	import_jsx_runtime$15 = require_jsx_runtime();
 	__defProp$4 = Object.defineProperty;
 	__name$4 = (target, value) => __defProp$4(target, "name", {
 		value,
@@ -13708,30 +13655,30 @@ var init_dist$5 = __esmMin((() => {
 	[DialogProvider, useDialogContext] = createDialogContext(DIALOG_NAME);
 	Dialog$1 = /* @__PURE__ */ __name$4((props) => {
 		const { __scopeDialog, children, open: openProp, defaultOpen, onOpenChange, modal = true } = props;
-		const triggerRef = import_react$15.useRef(null);
-		const contentRef = import_react$15.useRef(null);
+		const triggerRef = import_react$16.useRef(null);
+		const contentRef = import_react$16.useRef(null);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
 			onChange: onOpenChange,
 			caller: DIALOG_NAME
 		});
-		const [titleCount, setTitleCount] = import_react$15.useState(0);
-		const [descriptionCount, setDescriptionCount] = import_react$15.useState(0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogProvider, {
+		const [titleCount, setTitleCount] = import_react$16.useState(0);
+		const [descriptionCount, setDescriptionCount] = import_react$16.useState(0);
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogProvider, {
 			scope: __scopeDialog,
 			triggerRef,
 			contentRef,
-			contentId: useId$2(),
-			titleId: useId$2(),
-			descriptionId: useId$2(),
+			contentId: useId$3(),
+			titleId: useId$3(),
+			descriptionId: useId$3(),
 			titlePresent: titleCount > 0,
 			descriptionPresent: descriptionCount > 0,
 			setTitleCount,
 			setDescriptionCount,
 			open,
 			onOpenChange: setOpen,
-			onOpenToggle: import_react$15.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
+			onOpenToggle: import_react$16.useCallback(() => setOpen((prevOpen) => !prevOpen), [setOpen]),
 			modal,
 			children
 		});
@@ -13741,12 +13688,12 @@ var init_dist$5 = __esmMin((() => {
 	DialogPortal = /* @__PURE__ */ __name$4((props) => {
 		const { __scopeDialog, forceMount, children, container } = props;
 		const context = useDialogContext(PORTAL_NAME$1, __scopeDialog);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PortalProvider$1, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(PortalProvider$1, {
 			scope: __scopeDialog,
 			forceMount,
-			children: import_react$15.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
+			children: import_react$16.Children.map(children, (child) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Presence, {
 				present: forceMount || context.open,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Portal$1, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Portal$1, {
 					asChild: true,
 					container,
 					children: child
@@ -13755,28 +13702,28 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogPortal");
 	OVERLAY_NAME = "DialogOverlay";
-	DialogOverlay = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
+	DialogOverlay = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlay2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(OVERLAY_NAME, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, props.__scopeDialog);
-		return context.modal ? /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
+		return context.modal ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Presence, {
 			present: forceMount || context.open,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogOverlayImpl, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogOverlayImpl, {
 				...overlayProps,
 				ref: forwardedRef
 			})
 		}) : null;
 	}, "DialogOverlay"));
 	Slot = /* @__PURE__ */ createSlot("DialogOverlay.RemoveScroll");
-	DialogOverlayImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
+	DialogOverlayImpl = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogOverlayImpl2(props, forwardedRef) {
 		const { __scopeDialog, ...overlayProps } = props;
 		const context = useDialogContext(OVERLAY_NAME, __scopeDialog);
 		const composedRefs = useComposedRefs(forwardedRef, useDismissableLayerSurface());
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(ReactRemoveScroll, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ReactRemoveScroll, {
 			as: Slot,
 			allowPinchZoom: true,
 			shards: [context.contentRef],
-			children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.div, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.div, {
 				"data-state": getState(context.open),
 				...overlayProps,
 				ref: composedRefs,
@@ -13788,30 +13735,30 @@ var init_dist$5 = __esmMin((() => {
 		});
 	}, "DialogOverlayImpl"));
 	CONTENT_NAME$2 = "DialogContent";
-	DialogContent = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
+	DialogContent = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogContent2(props, forwardedRef) {
 		const portalContext = usePortalContext$1(CONTENT_NAME$2, props.__scopeDialog);
 		const { forceMount = portalContext.forceMount, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Presence, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Presence, {
 			present: forceMount || context.open,
-			children: context.modal ? /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentModal, {
+			children: context.modal ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogContentModal, {
 				...contentProps,
 				ref: forwardedRef
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentNonModal, {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogContentNonModal, {
 				...contentProps,
 				ref: forwardedRef
 			})
 		});
 	}, "DialogContent"));
-	DialogContentModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
+	DialogContentModal = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogContentModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const contentRef = import_react$15.useRef(null);
+		const contentRef = import_react$16.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, context.contentRef, contentRef);
-		import_react$15.useEffect(() => {
+		import_react$16.useEffect(() => {
 			const content = contentRef.current;
 			if (content) return hideOthers(content);
 		}, []);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentImpl, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogContentImpl, {
 			...props,
 			ref: composedRefs,
 			trapFocus: context.open,
@@ -13828,11 +13775,11 @@ var init_dist$5 = __esmMin((() => {
 			onFocusOutside: composeEventHandlers(props.onFocusOutside, (event) => event.preventDefault())
 		});
 	}, "DialogContentModal"));
-	DialogContentNonModal = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
+	DialogContentNonModal = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogContentNonModal2(props, forwardedRef) {
 		const context = useDialogContext(CONTENT_NAME$2, props.__scopeDialog);
-		const hasInteractedOutsideRef = import_react$15.useRef(false);
-		const hasPointerDownOutsideRef = import_react$15.useRef(false);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DialogContentImpl, {
+		const hasInteractedOutsideRef = import_react$16.useRef(false);
+		const hasPointerDownOutsideRef = import_react$16.useRef(false);
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DialogContentImpl, {
 			...props,
 			ref: forwardedRef,
 			trapFocus: false,
@@ -13858,17 +13805,17 @@ var init_dist$5 = __esmMin((() => {
 			}
 		});
 	}, "DialogContentNonModal"));
-	DialogContentImpl = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
+	DialogContentImpl = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogContentImpl2(props, forwardedRef) {
 		const { __scopeDialog, trapFocus, onOpenAutoFocus, onCloseAutoFocus, ...contentProps } = props;
 		const context = useDialogContext(CONTENT_NAME$2, __scopeDialog);
 		useFocusGuards();
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(import_jsx_runtime$14.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(FocusScope, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(import_jsx_runtime$15.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FocusScope, {
 			asChild: true,
 			loop: true,
 			trapped: trapFocus,
 			onMountAutoFocus: onOpenAutoFocus,
 			onUnmountAutoFocus: onCloseAutoFocus,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(DismissableLayer, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(DismissableLayer, {
 				role: "dialog",
 				id: context.contentId,
 				"aria-describedby": context.descriptionPresent ? context.descriptionId : void 0,
@@ -13882,7 +13829,7 @@ var init_dist$5 = __esmMin((() => {
 		}) });
 	}, "DialogContentImpl"));
 	TITLE_NAME = "DialogTitle";
-	DialogTitle = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
+	DialogTitle = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogTitle2(props, forwardedRef) {
 		const { __scopeDialog, ...titleProps } = props;
 		const context = useDialogContext(TITLE_NAME, __scopeDialog);
 		const { setTitleCount } = context;
@@ -13890,14 +13837,14 @@ var init_dist$5 = __esmMin((() => {
 			setTitleCount((count) => count + 1);
 			return () => setTitleCount((count) => count - 1);
 		}, [setTitleCount]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.h2, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.h2, {
 			id: context.titleId,
 			...titleProps,
 			ref: forwardedRef
 		});
 	}, "DialogTitle"));
 	DESCRIPTION_NAME = "DialogDescription";
-	DialogDescription = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
+	DialogDescription = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogDescription2(props, forwardedRef) {
 		const { __scopeDialog, ...descriptionProps } = props;
 		const context = useDialogContext(DESCRIPTION_NAME, __scopeDialog);
 		const { setDescriptionCount } = context;
@@ -13905,17 +13852,17 @@ var init_dist$5 = __esmMin((() => {
 			setDescriptionCount((count) => count + 1);
 			return () => setDescriptionCount((count) => count - 1);
 		}, [setDescriptionCount]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.p, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.p, {
 			id: context.descriptionId,
 			...descriptionProps,
 			ref: forwardedRef
 		});
 	}, "DialogDescription"));
 	CLOSE_NAME = "DialogClose";
-	DialogClose = /* @__PURE__ */ import_react$15.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
+	DialogClose = /* @__PURE__ */ import_react$16.forwardRef(/* @__PURE__ */ __name$4(function DialogClose2(props, forwardedRef) {
 		const { __scopeDialog, ...closeProps } = props;
 		const context = useDialogContext(CLOSE_NAME, __scopeDialog);
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.button, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Primitive.button, {
 			type: "button",
 			...closeProps,
 			ref: forwardedRef,
@@ -13924,8 +13871,7 @@ var init_dist$5 = __esmMin((() => {
 	}, "DialogClose"));
 	__name$4(getState, "getState");
 }));
-//#endregion
-//#region node_modules/@floating-ui/utils/dist/floating-ui.utils.mjs
+// node_modules/@floating-ui/utils/dist/floating-ui.utils.mjs
 function clamp(start, value, end) {
 	return max(start, min(value, end));
 }
@@ -14052,8 +13998,7 @@ var init_floating_ui_utils = __esmMin((() => {
 	tbPlacement = ["top", "bottom"];
 	btPlacement = ["bottom", "top"];
 }));
-//#endregion
-//#region node_modules/@floating-ui/core/dist/floating-ui.core.mjs
+// node_modules/@floating-ui/core/dist/floating-ui.core.mjs
 function computeCoordsFromPlacement(_ref, placement, rtl) {
 	let { reference, floating } = _ref;
 	const sideAxis = getSideAxis(placement);
@@ -14182,7 +14127,7 @@ async function convertValueToCoords(state, options) {
 		y: crossAxis * crossAxisMulti
 	};
 }
-var MAX_RESET_COUNT, computePosition$1, arrow$3, flip$2, hide$2, originSides, offset$2, shift$2, limitShift$2, size$2;
+var MAX_RESET_COUNT, computePosition$1, arrow$3, flip$1, hide$1, originSides, offset$1, shift$1, limitShift$1, size$1;
 var init_floating_ui_core = __esmMin((() => {
 	init_floating_ui_utils();
 	MAX_RESET_COUNT = 50;
@@ -14292,7 +14237,7 @@ var init_floating_ui_core = __esmMin((() => {
 			};
 		}
 	});
-	flip$2 = function(options) {
+	flip$1 = function(options) {
 		if (options === void 0) options = {};
 		return {
 			name: "flip",
@@ -14357,7 +14302,7 @@ var init_floating_ui_core = __esmMin((() => {
 			}
 		};
 	};
-	hide$2 = function(options) {
+	hide$1 = function(options) {
 		if (options === void 0) options = {};
 		return {
 			name: "hide",
@@ -14392,7 +14337,7 @@ var init_floating_ui_core = __esmMin((() => {
 		};
 	};
 	originSides = /*#__PURE__*/ new Set(["left", "top"]);
-	offset$2 = function(options) {
+	offset$1 = function(options) {
 		if (options === void 0) options = 0;
 		return {
 			name: "offset",
@@ -14413,7 +14358,7 @@ var init_floating_ui_core = __esmMin((() => {
 			}
 		};
 	};
-	shift$2 = function(options) {
+	shift$1 = function(options) {
 		if (options === void 0) options = {};
 		return {
 			name: "shift",
@@ -14458,7 +14403,7 @@ var init_floating_ui_core = __esmMin((() => {
 			}
 		};
 	};
-	limitShift$2 = function(options) {
+	limitShift$1 = function(options) {
 		if (options === void 0) options = {};
 		return {
 			options,
@@ -14505,7 +14450,7 @@ var init_floating_ui_core = __esmMin((() => {
 			}
 		};
 	};
-	size$2 = function(options) {
+	size$1 = function(options) {
 		if (options === void 0) options = {};
 		return {
 			name: "size",
@@ -14553,8 +14498,7 @@ var init_floating_ui_core = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs
+// node_modules/@floating-ui/utils/dist/floating-ui.utils.dom.mjs
 function hasWindow() {
 	return typeof window !== "undefined";
 }
@@ -14668,8 +14612,7 @@ var init_floating_ui_utils_dom = __esmMin((() => {
 	containRe = /paint|layout|strict|content/;
 	isNotNone = (value) => !!value && value !== "none";
 }));
-//#endregion
-//#region node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs
+// node_modules/@floating-ui/dom/dist/floating-ui.dom.mjs
 function getCssDimensions(element) {
 	const css = getComputedStyle$2(element);
 	let width = parseFloat(css.width) || 0;
@@ -15113,7 +15056,7 @@ function autoUpdate(reference, floating, update, options) {
 		if (animationFrame) cancelAnimationFrame(frameId);
 	};
 }
-var noOffsets, SCROLLBAR_MAX, getElementRects, platform, offset$1, shift$1, flip$1, size$1, hide$1, arrow$2, limitShift$1, computePosition;
+var noOffsets, SCROLLBAR_MAX, getElementRects, platform, offset$2, shift$2, flip$2, size$2, hide$2, arrow$2, limitShift$2, computePosition;
 var init_floating_ui_dom = __esmMin((() => {
 	init_floating_ui_core();
 	init_floating_ui_utils();
@@ -15146,13 +15089,13 @@ var init_floating_ui_dom = __esmMin((() => {
 		isElement,
 		isRTL
 	};
-	offset$1 = offset$2;
-	shift$1 = shift$2;
-	flip$1 = flip$2;
-	size$1 = size$2;
-	hide$1 = hide$2;
+	offset$2 = offset$1;
+	shift$2 = shift$1;
+	flip$2 = flip$1;
+	size$2 = size$1;
+	hide$2 = hide$1;
 	arrow$2 = arrow$3;
-	limitShift$1 = limitShift$2;
+	limitShift$2 = limitShift$1;
 	computePosition = (reference, floating, options) => {
 		const cache = /* @__PURE__ */ new Map();
 		const mergedOptions = options != null ? options : {};
@@ -15167,8 +15110,7 @@ var init_floating_ui_dom = __esmMin((() => {
 		});
 	};
 }));
-//#endregion
-//#region node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs
+// node_modules/@floating-ui/react-dom/dist/floating-ui.react-dom.mjs
 function deepEqual(a, b) {
 	if (a === b) return true;
 	if (typeof a !== typeof b) return false;
@@ -15205,7 +15147,7 @@ function roundByDPR(element, value) {
 	return Math.round(value * dpr) / dpr;
 }
 function useLatestRef(value) {
-	const ref = import_react$13.useRef(value);
+	const ref = import_react$14.useRef(value);
 	index$1(() => {
 		ref.current = value;
 	});
@@ -15218,7 +15160,7 @@ function useLatestRef(value) {
 function useFloating(options) {
 	if (options === void 0) options = {};
 	const { placement = "bottom", strategy = "absolute", middleware = [], platform, elements: { reference: externalReference, floating: externalFloating } = {}, transform = true, whileElementsMounted, open } = options;
-	const [data, setData] = import_react$13.useState({
+	const [data, setData] = import_react$14.useState({
 		x: 0,
 		y: 0,
 		strategy,
@@ -15226,17 +15168,17 @@ function useFloating(options) {
 		middlewareData: {},
 		isPositioned: false
 	});
-	const [latestMiddleware, setLatestMiddleware] = import_react$13.useState(middleware);
+	const [latestMiddleware, setLatestMiddleware] = import_react$14.useState(middleware);
 	if (!deepEqual(latestMiddleware, middleware)) setLatestMiddleware(middleware);
-	const [_reference, _setReference] = import_react$13.useState(null);
-	const [_floating, _setFloating] = import_react$13.useState(null);
-	const setReference = import_react$13.useCallback((node) => {
+	const [_reference, _setReference] = import_react$14.useState(null);
+	const [_floating, _setFloating] = import_react$14.useState(null);
+	const setReference = import_react$14.useCallback((node) => {
 		if (node !== referenceRef.current) {
 			referenceRef.current = node;
 			_setReference(node);
 		}
 	}, []);
-	const setFloating = import_react$13.useCallback((node) => {
+	const setFloating = import_react$14.useCallback((node) => {
 		if (node !== floatingRef.current) {
 			floatingRef.current = node;
 			_setFloating(node);
@@ -15244,14 +15186,14 @@ function useFloating(options) {
 	}, []);
 	const referenceEl = externalReference || _reference;
 	const floatingEl = externalFloating || _floating;
-	const referenceRef = import_react$13.useRef(null);
-	const floatingRef = import_react$13.useRef(null);
-	const dataRef = import_react$13.useRef(data);
+	const referenceRef = import_react$14.useRef(null);
+	const floatingRef = import_react$14.useRef(null);
+	const dataRef = import_react$14.useRef(data);
 	const hasWhileElementsMounted = whileElementsMounted != null;
 	const whileElementsMountedRef = useLatestRef(whileElementsMounted);
 	const platformRef = useLatestRef(platform);
 	const openRef = useLatestRef(open);
-	const update = import_react$13.useCallback(() => {
+	const update = import_react$14.useCallback(() => {
 		if (!referenceRef.current || !floatingRef.current) return;
 		const config = {
 			placement,
@@ -15287,7 +15229,7 @@ function useFloating(options) {
 			}));
 		}
 	}, [open]);
-	const isMountedRef = import_react$13.useRef(false);
+	const isMountedRef = import_react$14.useRef(false);
 	index$1(() => {
 		isMountedRef.current = true;
 		return () => {
@@ -15308,17 +15250,17 @@ function useFloating(options) {
 		whileElementsMountedRef,
 		hasWhileElementsMounted
 	]);
-	const refs = import_react$13.useMemo(() => ({
+	const refs = import_react$14.useMemo(() => ({
 		reference: referenceRef,
 		floating: floatingRef,
 		setReference,
 		setFloating
 	}), [setReference, setFloating]);
-	const elements = import_react$13.useMemo(() => ({
+	const elements = import_react$14.useMemo(() => ({
 		reference: referenceEl,
 		floating: floatingEl
 	}), [referenceEl, floatingEl]);
-	const floatingStyles = import_react$13.useMemo(() => {
+	const floatingStyles = import_react$14.useMemo(() => {
 		const initialStyles = {
 			position: strategy,
 			left: 0,
@@ -15344,7 +15286,7 @@ function useFloating(options) {
 		data.x,
 		data.y
 	]);
-	return import_react$13.useMemo(() => ({
+	return import_react$14.useMemo(() => ({
 		...data,
 		update,
 		refs,
@@ -15358,13 +15300,13 @@ function useFloating(options) {
 		floatingStyles
 	]);
 }
-var import_react$13, import_react$14, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
+var import_react$14, import_react$15, import_react_dom$3, index$1, arrow$1, offset, shift, limitShift, flip, size, hide, arrow;
 var init_floating_ui_react_dom = __esmMin((() => {
 	init_floating_ui_dom();
-	import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
 	import_react_dom$3 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
-	index$1 = typeof document !== "undefined" ? import_react$14.useLayoutEffect : function noop() {};
+	index$1 = typeof document !== "undefined" ? import_react$15.useLayoutEffect : function noop() {};
 	arrow$1 = (options) => {
 		function isRef(value) {
 			return {}.hasOwnProperty.call(value, "current");
@@ -15390,7 +15332,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 		};
 	};
 	offset = (options, deps) => {
-		const result = offset$1(options);
+		const result = offset$2(options);
 		return {
 			name: result.name,
 			fn: result.fn,
@@ -15398,7 +15340,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 		};
 	};
 	shift = (options, deps) => {
-		const result = shift$1(options);
+		const result = shift$2(options);
 		return {
 			name: result.name,
 			fn: result.fn,
@@ -15407,12 +15349,12 @@ var init_floating_ui_react_dom = __esmMin((() => {
 	};
 	limitShift = (options, deps) => {
 		return {
-			fn: limitShift$1(options).fn,
+			fn: limitShift$2(options).fn,
 			options: [options, deps]
 		};
 	};
 	flip = (options, deps) => {
-		const result = flip$1(options);
+		const result = flip$2(options);
 		return {
 			name: result.name,
 			fn: result.fn,
@@ -15420,7 +15362,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 		};
 	};
 	size = (options, deps) => {
-		const result = size$1(options);
+		const result = size$2(options);
 		return {
 			name: result.name,
 			fn: result.fn,
@@ -15428,7 +15370,7 @@ var init_floating_ui_react_dom = __esmMin((() => {
 		};
 	};
 	hide = (options, deps) => {
-		const result = hide$1(options);
+		const result = hide$2(options);
 		return {
 			name: result.name,
 			fn: result.fn,
@@ -15444,10 +15386,9 @@ var init_floating_ui_react_dom = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-use-size/dist/index.mjs
+// node_modules/@radix-ui/react-use-size/dist/index.mjs
 function useSize(element) {
-	const [size, setSize] = import_react$12.useState(void 0);
+	const [size, setSize] = import_react$13.useState(void 0);
 	useLayoutEffect2(() => {
 		if (element) {
 			setSize({
@@ -15480,9 +15421,9 @@ function useSize(element) {
 	}, [element]);
 	return size;
 }
-var import_react$12, __defProp$3, __name$3;
+var import_react$13, __defProp$3, __name$3;
 var init_dist$4 = __esmMin((() => {
-	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$16();
 	__defProp$3 = Object.defineProperty;
 	__name$3 = (target, value) => __defProp$3(target, "name", {
@@ -15491,8 +15432,7 @@ var init_dist$4 = __esmMin((() => {
 	});
 	__name$3(useSize, "useSize");
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-popper/dist/index.mjs
+// node_modules/@radix-ui/react-popper/dist/index.mjs
 function isNotNull(value) {
 	return value !== null;
 }
@@ -15500,9 +15440,9 @@ function getSideAndAlignFromPlacement(placement) {
 	const [side, align = "center"] = placement.split("-");
 	return [side, align];
 }
-var import_react$11, import_jsx_runtime$13, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
+var import_react$12, import_jsx_runtime$14, __defProp$2, __name$2, POPPER_NAME, createPopperContext, createPopperScope, PopperProvider, usePopperContext, Popper, ANCHOR_NAME, PopperAnchor, CONTENT_NAME$1, PopperContentProvider, useContentContext, PopperContent, transformOrigin, Root2, Anchor, Content;
 var init_dist$3 = __esmMin((() => {
-	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_floating_ui_react_dom();
 	init_dist$20();
 	init_dist$17();
@@ -15510,7 +15450,7 @@ var init_dist$3 = __esmMin((() => {
 	init_dist$11();
 	init_dist$16();
 	init_dist$4();
-	import_jsx_runtime$13 = require_jsx_runtime();
+	import_jsx_runtime$14 = require_jsx_runtime();
 	__defProp$2 = Object.defineProperty;
 	__name$2 = (target, value) => __defProp$2(target, "name", {
 		value,
@@ -15521,9 +15461,9 @@ var init_dist$3 = __esmMin((() => {
 	[PopperProvider, usePopperContext] = createPopperContext(POPPER_NAME);
 	Popper = /* @__PURE__ */ __name$2((props) => {
 		const { __scopePopper, children } = props;
-		const [anchor, setAnchor] = import_react$11.useState(null);
-		const [placementState, setPlacementState] = import_react$11.useState(void 0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(PopperProvider, {
+		const [anchor, setAnchor] = import_react$12.useState(null);
+		const [placementState, setPlacementState] = import_react$12.useState(void 0);
+		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PopperProvider, {
 			scope: __scopePopper,
 			anchor,
 			onAnchorChange: setAnchor,
@@ -15533,17 +15473,17 @@ var init_dist$3 = __esmMin((() => {
 		});
 	}, "Popper");
 	ANCHOR_NAME = "PopperAnchor";
-	PopperAnchor = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
+	PopperAnchor = /* @__PURE__ */ import_react$12.forwardRef(/* @__PURE__ */ __name$2(function PopperAnchor2(props, forwardedRef) {
 		const { __scopePopper, virtualRef, ...anchorProps } = props;
 		const context = usePopperContext(ANCHOR_NAME, __scopePopper);
-		const ref = import_react$11.useRef(null);
+		const ref = import_react$12.useRef(null);
 		const onAnchorChange = context.onAnchorChange;
-		const composedRefs = useComposedRefs(forwardedRef, import_react$11.useCallback((node) => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$12.useCallback((node) => {
 			ref.current = node;
 			if (node) onAnchorChange(node);
 		}, [onAnchorChange]));
-		const anchorRef = import_react$11.useRef(null);
-		import_react$11.useEffect(() => {
+		const anchorRef = import_react$12.useRef(null);
+		import_react$12.useEffect(() => {
 			if (!virtualRef) return;
 			const previousAnchor = anchorRef.current;
 			anchorRef.current = virtualRef.current;
@@ -15552,7 +15492,7 @@ var init_dist$3 = __esmMin((() => {
 		const sideAndAlign = context.placementState && getSideAndAlignFromPlacement(context.placementState);
 		const placedSide = sideAndAlign?.[0];
 		const placedAlign = sideAndAlign?.[1];
-		return virtualRef ? null : /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Primitive.div, {
+		return virtualRef ? null : /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.div, {
 			"data-radix-popper-side": placedSide,
 			"data-radix-popper-align": placedAlign,
 			...anchorProps,
@@ -15561,12 +15501,12 @@ var init_dist$3 = __esmMin((() => {
 	}, "PopperAnchor"));
 	CONTENT_NAME$1 = "PopperContent";
 	[PopperContentProvider, useContentContext] = createPopperContext(CONTENT_NAME$1);
-	PopperContent = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
+	PopperContent = /* @__PURE__ */ import_react$12.forwardRef(/* @__PURE__ */ __name$2(function PopperContent2(props, forwardedRef) {
 		const { __scopePopper, side = "bottom", sideOffset = 0, align = "center", alignOffset = 0, arrowPadding = 0, avoidCollisions = true, collisionBoundary = [], collisionPadding: collisionPaddingProp = 0, sticky = "partial", hideWhenDetached = false, updatePositionStrategy = "optimized", onPlaced, ...contentProps } = props;
 		const context = usePopperContext(CONTENT_NAME$1, __scopePopper);
-		const [content, setContent] = import_react$11.useState(null);
+		const [content, setContent] = import_react$12.useState(null);
 		const composedRefs = useComposedRefs(forwardedRef, setContent);
-		const [arrow$4, setArrow] = import_react$11.useState(null);
+		const [arrow$4, setArrow] = import_react$12.useState(null);
 		const arrowSize = useSize(arrow$4);
 		const arrowWidth = arrowSize?.width ?? 0;
 		const arrowHeight = arrowSize?.height ?? 0;
@@ -15645,11 +15585,11 @@ var init_dist$3 = __esmMin((() => {
 		const arrowX = middlewareData.arrow?.x;
 		const arrowY = middlewareData.arrow?.y;
 		const cannotCenterArrow = middlewareData.arrow?.centerOffset !== 0;
-		const [contentZIndex, setContentZIndex] = import_react$11.useState();
+		const [contentZIndex, setContentZIndex] = import_react$12.useState();
 		useLayoutEffect2(() => {
 			if (content) setContentZIndex(window.getComputedStyle(content).zIndex);
 		}, [content]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)("div", {
 			ref: refs.setFloating,
 			"data-radix-popper-content-wrapper": "",
 			style: {
@@ -15664,7 +15604,7 @@ var init_dist$3 = __esmMin((() => {
 				}
 			},
 			dir: props.dir,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(PopperContentProvider, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PopperContentProvider, {
 				scope: __scopePopper,
 				placedSide,
 				placedAlign,
@@ -15672,7 +15612,7 @@ var init_dist$3 = __esmMin((() => {
 				arrowX,
 				arrowY,
 				shouldHideArrow: cannotCenterArrow,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Primitive.div, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Primitive.div, {
 					"data-side": placedSide,
 					"data-align": placedAlign,
 					...contentProps,
@@ -15728,13 +15668,12 @@ var init_dist$3 = __esmMin((() => {
 	Anchor = PopperAnchor;
 	Content = PopperContent;
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-visually-hidden/dist/index.mjs
-var import_react$10, import_jsx_runtime$12, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
+// node_modules/@radix-ui/react-visually-hidden/dist/index.mjs
+var import_react$11, import_jsx_runtime$13, __defProp$1, __name$1, VISUALLY_HIDDEN_STYLES, VisuallyHidden, Root;
 var init_dist$2 = __esmMin((() => {
-	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$12();
-	import_jsx_runtime$12 = require_jsx_runtime();
+	import_jsx_runtime$13 = require_jsx_runtime();
 	__defProp$1 = Object.defineProperty;
 	__name$1 = (target, value) => __defProp$1(target, "name", {
 		value,
@@ -15752,8 +15691,8 @@ var init_dist$2 = __esmMin((() => {
 		whiteSpace: "nowrap",
 		wordWrap: "normal"
 	});
-	VisuallyHidden = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Primitive.span, {
+	VisuallyHidden = /* @__PURE__ */ import_react$11.forwardRef(/* @__PURE__ */ __name$1(function VisuallyHidden2(props, forwardedRef) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Primitive.span, {
 			...props,
 			ref: forwardedRef,
 			style: {
@@ -15764,8 +15703,7 @@ var init_dist$2 = __esmMin((() => {
 	}, "VisuallyHidden"));
 	Root = VisuallyHidden;
 }));
-//#endregion
-//#region node_modules/@radix-ui/react-tooltip/dist/index.mjs
+// node_modules/@radix-ui/react-tooltip/dist/index.mjs
 function getExitSideFromRect(point, rect) {
 	const top = Math.abs(rect.top - point.y);
 	const bottom = Math.abs(rect.bottom - point.y);
@@ -15894,9 +15832,9 @@ function getHullPresorted(points) {
 	if (upperHull.length === 1 && lowerHull.length === 1 && upperHull[0].x === lowerHull[0].x && upperHull[0].y === lowerHull[0].y) return upperHull;
 	else return upperHull.concat(lowerHull);
 }
-var import_react$9, import_jsx_runtime$11, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
+var import_react$10, import_jsx_runtime$12, __defProp, __name, createTooltipContext$1, createTooltipScope, usePopperScope, PROVIDER_NAME, DEFAULT_DELAY_DURATION, TOOLTIP_OPEN, TooltipProviderContextProvider, useTooltipProviderContext, TooltipProvider, TOOLTIP_NAME, TooltipContextProvider, useTooltipContext, Tooltip$1, TRIGGER_NAME, TooltipTrigger, PORTAL_NAME, PortalProvider, usePortalContext, TooltipPortal, CONTENT_NAME, TooltipContent, TooltipContentHoverable, Slottable, TooltipContentImpl, Provider, Root3, Trigger, Portal, Content2;
 var init_dist$1 = __esmMin((() => {
-	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$18();
 	init_dist$20();
 	init_dist$17();
@@ -15910,7 +15848,7 @@ var init_dist$1 = __esmMin((() => {
 	init_dist$13();
 	init_dist$16();
 	init_dist$2();
-	import_jsx_runtime$11 = require_jsx_runtime();
+	import_jsx_runtime$12 = require_jsx_runtime();
 	__defProp = Object.defineProperty;
 	__name = (target, value) => __defProp(target, "name", {
 		value,
@@ -15924,29 +15862,29 @@ var init_dist$1 = __esmMin((() => {
 	[TooltipProviderContextProvider, useTooltipProviderContext] = createTooltipContext$1(PROVIDER_NAME);
 	TooltipProvider = /* @__PURE__ */ __name((props) => {
 		const { __scopeTooltip, delayDuration = DEFAULT_DELAY_DURATION, skipDelayDuration = 300, disableHoverableContent = false, children } = props;
-		const isOpenDelayedRef = import_react$9.useRef(true);
-		const isPointerInTransitRef = import_react$9.useRef(false);
-		const skipDelayTimerRef = import_react$9.useRef(0);
-		import_react$9.useEffect(() => {
+		const isOpenDelayedRef = import_react$10.useRef(true);
+		const isPointerInTransitRef = import_react$10.useRef(false);
+		const skipDelayTimerRef = import_react$10.useRef(0);
+		import_react$10.useEffect(() => {
 			const skipDelayTimer = skipDelayTimerRef.current;
 			return () => window.clearTimeout(skipDelayTimer);
 		}, []);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(TooltipProviderContextProvider, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(TooltipProviderContextProvider, {
 			scope: __scopeTooltip,
 			isOpenDelayedRef,
 			delayDuration,
-			onOpen: import_react$9.useCallback(() => {
+			onOpen: import_react$10.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				isOpenDelayedRef.current = false;
 			}, [skipDelayDuration]),
-			onClose: import_react$9.useCallback(() => {
+			onClose: import_react$10.useCallback(() => {
 				if (skipDelayDuration <= 0) return;
 				window.clearTimeout(skipDelayTimerRef.current);
 				skipDelayTimerRef.current = window.setTimeout(() => isOpenDelayedRef.current = true, skipDelayDuration);
 			}, [skipDelayDuration]),
 			isPointerInTransitRef,
-			onPointerInTransitChange: import_react$9.useCallback((inTransit) => {
+			onPointerInTransitChange: import_react$10.useCallback((inTransit) => {
 				isPointerInTransitRef.current = inTransit;
 			}, []),
 			disableHoverableContent,
@@ -15959,13 +15897,13 @@ var init_dist$1 = __esmMin((() => {
 		const { __scopeTooltip, children, open: openProp, defaultOpen, onOpenChange, disableHoverableContent: disableHoverableContentProp, delayDuration: delayDurationProp } = props;
 		const providerContext = useTooltipProviderContext(TOOLTIP_NAME, props.__scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const [trigger, setTrigger] = import_react$9.useState(null);
-		const [contentIdState, setContentId] = import_react$9.useState(void 0);
-		const generatedContentId = useId$2();
-		const openTimerRef = import_react$9.useRef(0);
+		const [trigger, setTrigger] = import_react$10.useState(null);
+		const [contentIdState, setContentId] = import_react$10.useState(void 0);
+		const generatedContentId = useId$3();
+		const openTimerRef = import_react$10.useRef(0);
 		const disableHoverableContent = disableHoverableContentProp ?? providerContext.disableHoverableContent;
 		const delayDuration = delayDurationProp ?? providerContext.delayDuration;
-		const wasOpenDelayedRef = import_react$9.useRef(false);
+		const wasOpenDelayedRef = import_react$10.useRef(false);
 		const [open, setOpen] = useControllableState({
 			prop: openProp,
 			defaultProp: defaultOpen ?? false,
@@ -15978,21 +15916,21 @@ var init_dist$1 = __esmMin((() => {
 			}, "onChange"),
 			caller: TOOLTIP_NAME
 		});
-		const stateAttribute = import_react$9.useMemo(() => {
+		const stateAttribute = import_react$10.useMemo(() => {
 			return open ? wasOpenDelayedRef.current ? "delayed-open" : "instant-open" : "closed";
 		}, [open]);
-		const handleOpen = import_react$9.useCallback(() => {
+		const handleOpen = import_react$10.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			wasOpenDelayedRef.current = false;
 			setOpen(true);
 		}, [setOpen]);
-		const handleClose = import_react$9.useCallback(() => {
+		const handleClose = import_react$10.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = 0;
 			setOpen(false);
 		}, [setOpen]);
-		const handleDelayedOpen = import_react$9.useCallback(() => {
+		const handleDelayedOpen = import_react$10.useCallback(() => {
 			window.clearTimeout(openTimerRef.current);
 			openTimerRef.current = window.setTimeout(() => {
 				wasOpenDelayedRef.current = true;
@@ -16000,7 +15938,7 @@ var init_dist$1 = __esmMin((() => {
 				openTimerRef.current = 0;
 			}, delayDuration);
 		}, [delayDuration, setOpen]);
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			return () => {
 				if (openTimerRef.current) {
 					window.clearTimeout(openTimerRef.current);
@@ -16009,9 +15947,9 @@ var init_dist$1 = __esmMin((() => {
 			};
 		}, []);
 		const contentId = contentIdState ?? generatedContentId;
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Root2, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Root2, {
 			...popperScope,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(TooltipContextProvider, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(TooltipContextProvider, {
 				scope: __scopeTooltip,
 				contentId,
 				setContentId,
@@ -16019,7 +15957,7 @@ var init_dist$1 = __esmMin((() => {
 				stateAttribute,
 				trigger,
 				onTriggerChange: setTrigger,
-				onTriggerEnter: import_react$9.useCallback(() => {
+				onTriggerEnter: import_react$10.useCallback(() => {
 					if (providerContext.isOpenDelayedRef.current) handleDelayedOpen();
 					else handleOpen();
 				}, [
@@ -16027,7 +15965,7 @@ var init_dist$1 = __esmMin((() => {
 					handleDelayedOpen,
 					handleOpen
 				]),
-				onTriggerLeave: import_react$9.useCallback(() => {
+				onTriggerLeave: import_react$10.useCallback(() => {
 					if (disableHoverableContent) handleClose();
 					else {
 						window.clearTimeout(openTimerRef.current);
@@ -16042,22 +15980,22 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "Tooltip");
 	TRIGGER_NAME = "TooltipTrigger";
-	TooltipTrigger = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
+	TooltipTrigger = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name(function TooltipTrigger2(props, forwardedRef) {
 		const { __scopeTooltip, ...triggerProps } = props;
 		const context = useTooltipContext(TRIGGER_NAME, __scopeTooltip);
 		const providerContext = useTooltipProviderContext(TRIGGER_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
-		const composedRefs = useComposedRefs(forwardedRef, import_react$9.useRef(null), context.onTriggerChange);
-		const isPointerDownRef = import_react$9.useRef(false);
-		const hasPointerMoveOpenedRef = import_react$9.useRef(false);
-		const handlePointerUp = import_react$9.useCallback(() => isPointerDownRef.current = false, []);
-		import_react$9.useEffect(() => {
+		const composedRefs = useComposedRefs(forwardedRef, import_react$10.useRef(null), context.onTriggerChange);
+		const isPointerDownRef = import_react$10.useRef(false);
+		const hasPointerMoveOpenedRef = import_react$10.useRef(false);
+		const handlePointerUp = import_react$10.useCallback(() => isPointerDownRef.current = false, []);
+		import_react$10.useEffect(() => {
 			return () => document.removeEventListener("pointerup", handlePointerUp);
 		}, [handlePointerUp]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Anchor, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Anchor, {
 			asChild: true,
 			...popperScope,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Primitive.button, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Primitive.button, {
 				"aria-describedby": context.open ? context.contentId : void 0,
 				"data-state": context.stateAttribute,
 				...triggerProps,
@@ -16091,12 +16029,12 @@ var init_dist$1 = __esmMin((() => {
 	TooltipPortal = /* @__PURE__ */ __name((props) => {
 		const { __scopeTooltip, forceMount, children, container } = props;
 		const context = useTooltipContext(PORTAL_NAME, __scopeTooltip);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(PortalProvider, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(PortalProvider, {
 			scope: __scopeTooltip,
 			forceMount,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Presence, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Presence, {
 				present: forceMount || context.open,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Portal$1, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Portal$1, {
 					asChild: true,
 					container,
 					children
@@ -16105,37 +16043,37 @@ var init_dist$1 = __esmMin((() => {
 		});
 	}, "TooltipPortal");
 	CONTENT_NAME = "TooltipContent";
-	TooltipContent = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
+	TooltipContent = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name(function TooltipContent2(props, forwardedRef) {
 		const portalContext = usePortalContext(CONTENT_NAME, props.__scopeTooltip);
 		const { forceMount = portalContext.forceMount, side = "top", ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Presence, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Presence, {
 			present: forceMount || context.open,
-			children: context.disableHoverableContent ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(TooltipContentImpl, {
+			children: context.disableHoverableContent ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(TooltipContentImpl, {
 				side,
 				...contentProps,
 				ref: forwardedRef
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(TooltipContentHoverable, {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(TooltipContentHoverable, {
 				side,
 				...contentProps,
 				ref: forwardedRef
 			})
 		});
 	}, "TooltipContent"));
-	TooltipContentHoverable = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
+	TooltipContentHoverable = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name(function TooltipContentHoverable2(props, forwardedRef) {
 		const context = useTooltipContext(CONTENT_NAME, props.__scopeTooltip);
 		const providerContext = useTooltipProviderContext(CONTENT_NAME, props.__scopeTooltip);
-		const ref = import_react$9.useRef(null);
+		const ref = import_react$10.useRef(null);
 		const composedRefs = useComposedRefs(forwardedRef, ref);
-		const [pointerGraceArea, setPointerGraceArea] = import_react$9.useState(null);
+		const [pointerGraceArea, setPointerGraceArea] = import_react$10.useState(null);
 		const { trigger, onClose } = context;
 		const content = ref.current;
 		const { onPointerInTransitChange } = providerContext;
-		const handleRemoveGraceArea = import_react$9.useCallback(() => {
+		const handleRemoveGraceArea = import_react$10.useCallback(() => {
 			setPointerGraceArea(null);
 			onPointerInTransitChange(false);
 		}, [onPointerInTransitChange]);
-		const handleCreateGraceArea = import_react$9.useCallback((event, hoverTarget) => {
+		const handleCreateGraceArea = import_react$10.useCallback((event, hoverTarget) => {
 			const currentTarget = event.currentTarget;
 			const exitPoint = {
 				x: event.clientX,
@@ -16147,10 +16085,10 @@ var init_dist$1 = __esmMin((() => {
 			setPointerGraceArea(graceArea);
 			onPointerInTransitChange(true);
 		}, [onPointerInTransitChange]);
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			return () => handleRemoveGraceArea();
 		}, [handleRemoveGraceArea]);
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			if (trigger && content) {
 				const handleTriggerLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, content), "handleTriggerLeave");
 				const handleContentLeave = /* @__PURE__ */ __name((event) => handleCreateGraceArea(event, trigger), "handleContentLeave");
@@ -16167,7 +16105,7 @@ var init_dist$1 = __esmMin((() => {
 			handleCreateGraceArea,
 			handleRemoveGraceArea
 		]);
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			if (pointerGraceArea) {
 				const handleTrackPointerGrace = /* @__PURE__ */ __name((event) => {
 					const target = event.target;
@@ -16193,22 +16131,22 @@ var init_dist$1 = __esmMin((() => {
 			onClose,
 			handleRemoveGraceArea
 		]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(TooltipContentImpl, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(TooltipContentImpl, {
 			...props,
 			ref: composedRefs
 		});
 	}, "TooltipContentHoverable"));
 	Slottable = /* @__PURE__ */ createSlottable("TooltipContent");
-	TooltipContentImpl = /* @__PURE__ */ import_react$9.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
+	TooltipContentImpl = /* @__PURE__ */ import_react$10.forwardRef(/* @__PURE__ */ __name(function TooltipContentImpl2(props, forwardedRef) {
 		const { __scopeTooltip, children, "aria-label": ariaLabel, id: idProp, onEscapeKeyDown, onPointerDownOutside, ...contentProps } = props;
 		const context = useTooltipContext(CONTENT_NAME, __scopeTooltip);
 		const popperScope = usePopperScope(__scopeTooltip);
 		const { onClose } = context;
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			document.addEventListener(TOOLTIP_OPEN, onClose);
 			return () => document.removeEventListener(TOOLTIP_OPEN, onClose);
 		}, [onClose]);
-		import_react$9.useEffect(() => {
+		import_react$10.useEffect(() => {
 			if (context.trigger) {
 				const handleScroll = /* @__PURE__ */ __name((event) => {
 					if (event.target instanceof Node && event.target.contains(context.trigger)) onClose();
@@ -16224,14 +16162,14 @@ var init_dist$1 = __esmMin((() => {
 				setContentId(void 0);
 			};
 		}, [idProp, setContentId]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DismissableLayer, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(DismissableLayer, {
 			asChild: true,
 			disableOutsidePointerEvents: false,
 			onEscapeKeyDown,
 			onPointerDownOutside,
 			onFocusOutside: (event) => event.preventDefault(),
 			onDismiss: onClose,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Content, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Content, {
 				"data-state": context.stateAttribute,
 				role: ariaLabel ? void 0 : "tooltip",
 				id: ariaLabel ? void 0 : context.contentId,
@@ -16246,7 +16184,7 @@ var init_dist$1 = __esmMin((() => {
 					"--radix-tooltip-trigger-width": "var(--radix-popper-anchor-width)",
 					"--radix-tooltip-trigger-height": "var(--radix-popper-anchor-height)"
 				},
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Slottable, { children }), ariaLabel ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Root, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Slottable, { children }), ariaLabel ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Root, {
 					id: context.contentId,
 					role: "tooltip",
 					children: ariaLabel
@@ -16266,8 +16204,7 @@ var init_dist$1 = __esmMin((() => {
 	Portal = TooltipPortal;
 	Content2 = TooltipContent;
 }));
-//#endregion
-//#region node_modules/clsx/dist/clsx.mjs
+// node_modules/clsx/dist/clsx.mjs
 function r(e) {
 	var t, f, n = "";
 	if ("string" == typeof e || "number" == typeof e) n += e;
@@ -16282,8 +16219,7 @@ function clsx() {
 	return n;
 }
 var init_clsx = __esmMin((() => {}));
-//#endregion
-//#region node_modules/class-variance-authority/dist/index.mjs
+// node_modules/class-variance-authority/dist/index.mjs
 var falsyToString, cx, cva;
 var init_dist = __esmMin((() => {
 	init_clsx();
@@ -16326,8 +16262,7 @@ var init_dist = __esmMin((() => {
 		return cx(base, getVariantClassNames, getCompoundVariantClassNames, props === null || props === void 0 ? void 0 : props.class, props === null || props === void 0 ? void 0 : props.className);
 	};
 }));
-//#endregion
-//#region node_modules/tailwind-merge/dist/bundle-mjs.mjs
+// node_modules/tailwind-merge/dist/bundle-mjs.mjs
 var concatArrays, createClassValidatorObject, createClassPartObject, CLASS_PART_SEPARATOR, EMPTY_CONFLICTS, ARBITRARY_PROPERTY_PREFIX, createClassGroupUtils, getGroupRecursive, getGroupIdForArbitraryProperty, createClassMap, processClassGroups, processClassesRecursively, processClassDefinition, processStringDefinition, processFunctionDefinition, processObjectDefinition, getPart, isThemeGetter, createLruCache, IMPORTANT_MODIFIER, MODIFIER_SEPARATOR, EMPTY_MODIFIERS, createResultObject, createParseClassName, createSortModifiers, createConfigUtils, createPostfixLookupClassGroupIds, SPLIT_CLASSES_REGEX, mergeClassList, twJoin, toValue, createTailwindMerge, fallbackThemeArr, fromTheme, arbitraryValueRegex, arbitraryVariableRegex, fractionRegex, tshirtUnitRegex, lengthUnitRegex, colorFunctionRegex, shadowRegex, imageRegex, isFraction, isNumber$1, isInteger, isPercent, isTshirtSize, isAny, isLengthOnly, isNever, isShadow, isImage, isAnyNonArbitrary, isNamedContainerQuery, isArbitrarySize, isArbitraryValue, isArbitraryLength, isArbitraryNumber, isArbitraryWeight, isArbitraryFamilyName, isArbitraryPosition, isArbitraryImage, isArbitraryShadow, isArbitraryVariable, isArbitraryVariableLength, isArbitraryVariableFamilyName, isArbitraryVariablePosition, isArbitraryVariableSize, isArbitraryVariableImage, isArbitraryVariableShadow, isArbitraryVariableWeight, getIsArbitraryValue, getIsArbitraryVariable, isLabelPosition, isLabelImage, isLabelSize, isLabelLength, isLabelNumber, isLabelFamilyName, isLabelWeight, isLabelShadow, getDefaultConfig, twMerge;
 var init_bundle_mjs = __esmMin((() => {
 	concatArrays = (array1, array2) => {
@@ -19765,8 +19700,7 @@ var init_bundle_mjs = __esmMin((() => {
 	};
 	twMerge = /*#__PURE__*/ createTailwindMerge(getDefaultConfig);
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/components.ts
+// crates/gateway-api/admin-ui/src/design-system/components.ts
 function toneForStatus(value) {
 	const status = String(value ?? "").toLowerCase();
 	if ([
@@ -19841,8 +19775,7 @@ function jsonBlock(value) {
 	return `<pre>${html(JSON.stringify(value ?? null, null, 2))}</pre>`;
 }
 var init_components = __esmMin((() => {}));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/workflows.ts
+// crates/gateway-api/admin-ui/src/design-system/workflows.ts
 function workflowIcon(title) {
 	const name = title.toLowerCase();
 	if (/simulator/.test(name)) return "test-pipe";
@@ -19918,42 +19851,41 @@ function mountDrawerNavigation(dialog) {
 var init_workflows = __esmMin((() => {
 	init_components();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/components/ui/index.tsx
+// crates/gateway-api/admin-ui/src/components/ui/index.tsx
 function cn(...values) {
 	return twMerge(clsx(values));
 }
 function Field({ label, help, children }) {
-	const id = import_react$8.useId();
-	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+	const id = import_react$9.useId();
+	return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 		className: "rg-field grid gap-2 text-xs font-medium text-muted-foreground",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 			className: "flex items-center gap-1.5",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("label", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("label", {
 				htmlFor: id,
 				children: label
-			}), help && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Help, {
+			}), help && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Help, {
 				label,
 				children: help
 			})]
-		}), import_react$8.cloneElement(children, { id })]
+		}), import_react$9.cloneElement(children, { id })]
 	});
 }
 function CheckboxField({ label, help, ...props }) {
-	const id = import_react$8.useId();
-	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+	const id = import_react$9.useId();
+	return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 		className: "rg-check",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("input", {
 				...props,
 				id,
 				type: "checkbox"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("label", {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("label", {
 				htmlFor: id,
 				children: label
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Help, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Help, {
 				label,
 				children: help
 			})
@@ -19961,15 +19893,15 @@ function CheckboxField({ label, help, ...props }) {
 	});
 }
 function Help({ label, children }) {
-	const [open, setOpen] = import_react$8.useState(false);
-	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Provider, {
+	const [open, setOpen] = import_react$9.useState(false);
+	return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Provider, {
 		delayDuration: 200,
-		children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Root3, {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Root3, {
 			open,
 			onOpenChange: setOpen,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Trigger, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Trigger, {
 				asChild: true,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("button", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("button", {
 					type: "button",
 					className: "rg-help",
 					"aria-label": `About ${label}`,
@@ -19979,7 +19911,7 @@ function Help({ label, children }) {
 					},
 					children: "?"
 				})
-			}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Portal, { children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Content2, {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Portal, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Content2, {
 				sideOffset: 6,
 				collisionPadding: 12,
 				className: "rg-tooltip z-[100] max-w-72 rounded-md bg-foreground px-3 py-2 text-xs leading-relaxed text-background shadow-lg",
@@ -19989,11 +19921,11 @@ function Help({ label, children }) {
 	});
 }
 function Dialog({ title, description, children, footer, onClose, restoreFocus, initialFocus, layout = "modal" }) {
-	const descriptionId = import_react$8.useId();
-	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Dialog$1, {
+	const descriptionId = import_react$9.useId();
+	return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Dialog$1, {
 		open: true,
 		onOpenChange: onClose,
-		children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(DialogPortal, { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogOverlay, { className: "rg-dialog-overlay fixed inset-0 z-50 bg-black/40" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(DialogContent, {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(DialogPortal, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DialogOverlay, { className: "rg-dialog-overlay fixed inset-0 z-50 bg-black/40" }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(DialogContent, {
 			onOpenAutoFocus: (event) => {
 				if (initialFocus?.current) {
 					event.preventDefault();
@@ -20008,32 +19940,32 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 				restoreFocus?.focus();
 			},
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("header", {
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("header", {
 					className: "drawer-heading",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("span", {
 							className: "drawer-mark",
 							"aria-hidden": "true",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", { className: `ti ti-${workflowIcon(title)}` })
+							children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("i", { className: `ti ti-${workflowIcon(title)}` })
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 							className: "drawer-title",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogTitle, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DialogTitle, {
 								className: "text-sm font-medium text-foreground",
 								children: title
-							}), description && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogDescription, {
+							}), description && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DialogDescription, {
 								id: descriptionId,
 								className: "mt-1 text-xs text-muted-foreground",
 								children: description
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(DialogClose, {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DialogClose, {
 							asChild: true,
-							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Button, {
 								variant: "ghost",
 								size: "icon",
 								"aria-label": "Close dialog",
-								children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
+								children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("i", {
 									className: "ti ti-x",
 									"aria-hidden": "true"
 								})
@@ -20041,11 +19973,11 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
 					className: "rg-dialog-body min-h-0 overflow-y-auto px-5 py-4",
 					children
 				}),
-				footer && /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("footer", {
+				footer && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("footer", {
 					className: "flex flex-wrap gap-2 border-t border-border px-5 py-3",
 					children: footer
 				})
@@ -20053,9 +19985,9 @@ function Dialog({ title, description, children, footer, onClose, restoreFocus, i
 		})] })
 	});
 }
-var import_react$8, import_jsx_runtime$10, buttonVariants, Button, Input, NativeSelect;
+var import_react$9, import_jsx_runtime$11, buttonVariants, Button, Input, NativeSelect;
 var init_ui = __esmMin((() => {
-	import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_dist$19();
 	init_dist$5();
 	init_dist$1();
@@ -20063,7 +19995,7 @@ var init_ui = __esmMin((() => {
 	init_clsx();
 	init_bundle_mjs();
 	init_workflows();
-	import_jsx_runtime$10 = require_jsx_runtime();
+	import_jsx_runtime$11 = require_jsx_runtime();
 	buttonVariants = cva("rg-button inline-flex items-center justify-center gap-2 rounded-md text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50", {
 		variants: {
 			variant: {
@@ -20083,8 +20015,8 @@ var init_ui = __esmMin((() => {
 			size: "default"
 		}
 	});
-	Button = import_react$8.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
-		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(asChild ? Slot$1 : "button", {
+	Button = import_react$9.forwardRef(({ className, variant, size, asChild, type = "button", ...props }, ref) => {
+		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(asChild ? Slot$1 : "button", {
 			ref,
 			type,
 			className: cn(buttonVariants({
@@ -20095,48 +20027,47 @@ var init_ui = __esmMin((() => {
 		});
 	});
 	Button.displayName = "Button";
-	Input = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("input", {
+	Input = import_react$9.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("input", {
 		ref,
 		className: cn("rg-input h-9 w-full rounded-md border border-input bg-background px-3 text-[13px] disabled:opacity-50", className),
 		...props
 	}));
 	Input.displayName = "Input";
-	NativeSelect = import_react$8.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("select", {
+	NativeSelect = import_react$9.forwardRef(({ className, ...props }, ref) => /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("select", {
 		ref,
 		className: cn("rg-input h-9 rounded-md border border-input bg-background px-3 text-[13px]", className),
 		...props
 	}));
 	NativeSelect.displayName = "NativeSelect";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/brand.tsx
-var import_client$7 = require_client();
+// crates/gateway-api/admin-ui/src/react/brand.tsx
+var import_client$8 = require_client();
 init_ui();
-var import_jsx_runtime$9 = require_jsx_runtime();
+var import_jsx_runtime$10 = require_jsx_runtime();
 /** Generated by scripts/sync-brand.mjs from the approved native SVG masters. */
 function RelaynaLogo() {
-	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("svg", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("svg", {
 		className: "relayna-logo",
 		viewBox: "0 0 338.11 104",
 		role: "img",
 		"aria-label": "relayna Gateway",
 		focusable: "false",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("g", {
+			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("g", {
 				transform: "translate(0 2.5) scale(1.5)",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("g", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 					fill: "var(--rg-brand-body)",
 					d: "M14.3132 3.0438C14.4418 3.0434 14.5705 3.0429 14.703 3.0426C15.134 3.0413 15.5648 3.0407 15.9958 3.0401C16.3048 3.0394 16.6139 3.0386 16.923 3.0378C17.9381 3.0353 18.9534 3.0339 19.9685 3.0325C20.3185 3.0321 20.6686 3.0316 21.0186 3.031C22.4753 3.0291 23.932 3.0273 25.3887 3.0262C27.4731 3.0246 29.5575 3.0216 31.6419 3.0162C33.1091 3.0126 34.5764 3.0108 36.0436 3.0103C36.9191 3.0099 37.7945 3.0088 38.6698 3.0058C39.4945 3.0029 40.3191 3.0023 41.1437 3.0034C41.445 3.0034 41.7462 3.0027 42.0475 3.001C44.0255 2.9908 45.9289 3.0431 47.7512 3.9027C47.9622 4.0014 48.1731 4.1002 48.3904 4.2018C50.7583 5.4035 52.2342 7.4679 53.2228 9.8728C53.7623 11.5911 53.963 13.3419 53.1348 14.9984C52.6044 15.7449 51.9815 16.1972 51.2054 16.6639C50.4132 17.147 50.0187 17.5556 49.7217 18.4467C49.7041 18.8562 49.6982 19.2662 49.6981 19.6761C49.6978 19.8015 49.6975 19.927 49.6972 20.0562C49.6966 20.4774 49.6971 20.8986 49.6978 21.3197C49.6975 21.6214 49.6971 21.923 49.6967 22.2246C49.6959 22.8745 49.6957 23.5244 49.696 24.1743C49.6962 25.2012 49.6949 26.2281 49.6933 27.2551C49.6888 30.1754 49.6866 33.0957 49.686 36.016C49.6856 37.6285 49.6839 39.2411 49.6808 40.8537C49.6789 41.8753 49.6786 42.8968 49.6797 43.9184C49.68 44.553 49.6786 45.1876 49.6769 45.8222C49.6764 46.1172 49.6765 46.4122 49.6773 46.7073C49.6784 47.1089 49.6771 47.5105 49.6753 47.9122C49.6752 48.1373 49.6751 48.3624 49.675 48.5944C49.6279 49.1297 49.6279 49.1297 49.2525 49.5989C49.0649 49.6927 49.0649 49.6927 48.5019 49.6927C48.0608 49.3398 47.7434 48.9935 47.3759 48.5667C46.8463 47.9861 46.3139 47.4082 45.7808 46.8308C44.3084 45.2362 44.3084 45.2362 43.8748 44.7372C43.439 44.2423 42.9874 43.763 42.5366 43.2817C42.1424 42.8588 41.7564 42.429 41.3707 41.9985C41.2802 41.9014 41.1898 41.8043 41.0965 41.7041C40.3577 40.9107 40.3577 40.9107 40.1509 40.4972C40.0889 40.4972 40.027 40.4972 39.9632 40.4972C40.057 40.2157 40.057 40.2157 40.3722 40.0365C40.5082 39.9697 40.6441 39.9031 40.7842 39.8344C44.0233 38.1582 45.7438 35.1638 46.9302 31.8353C47.3479 30.2389 47.5034 28.7269 47.5049 27.0792C47.5051 26.916 47.5052 26.753 47.5054 26.5848C47.4752 23.078 46.3619 19.7796 43.9041 17.2269C42.071 15.4856 39.7071 14.3117 37.1547 14.3036C36.9648 14.3028 36.7749 14.302 36.5791 14.3012C36.4753 14.301 36.4753 14.301 35.9495 14.3C35.7302 14.2992 35.511 14.2985 35.285 14.2976C34.5585 14.2953 33.8319 14.2938 33.1054 14.2924C32.855 14.2919 32.6047 14.2914 32.3544 14.2909C31.3133 14.2889 30.2721 14.2871 29.2311 14.2861C27.7397 14.2845 26.2484 14.2814 24.7572 14.276C23.7079 14.2725 22.6588 14.2706 21.6096 14.2701C20.9831 14.2697 20.3566 14.2684 19.7302 14.2656C19.0315 14.2626 18.333 14.2626 17.6344 14.2633C17.4269 14.2618 17.2196 14.2603 17.0059 14.2587C16.8154 14.2594 16.6249 14.2602 16.4286 14.261C16.2636 14.2607 16.0984 14.2604 15.9283 14.2601C15.2465 14.3469 14.7934 14.6224 14.3119 15.1039C13.7481 15.8824 13.7484 16.5249 13.7471 17.4559C13.7465 17.5937 13.7459 17.7316 13.7453 17.8736C13.7437 18.3362 13.7442 18.7988 13.7447 19.2614C13.744 19.5927 13.7432 19.9242 13.7422 20.2555C13.7402 21.1563 13.7399 22.057 13.7401 22.9576C13.7401 23.7091 13.7393 24.4607 13.7385 25.2123C13.7367 26.9852 13.7364 28.7581 13.7371 30.531C13.7377 32.3607 13.7356 34.1904 13.7321 36.0203C13.7292 37.5904 13.7282 39.1607 13.7284 40.731C13.7287 41.6691 13.7282 42.6073 13.7259 43.5454C13.7238 44.4276 13.7239 45.3098 13.7259 46.192C13.7262 46.5159 13.7257 46.8397 13.7244 47.1636C13.7226 47.6056 13.7238 48.0475 13.7257 48.4895C13.7257 48.7369 13.7256 48.9843 13.7255 49.2392C13.7992 50.0463 14.0026 50.5681 14.5757 51.1412C16.7843 52.7298 18.6832 51.7091 22.0413 51.757C22.0413 42.0651 22.0413 32.3732 22.0413 22.3876C35.9593 22.3876 35.9593 22.3876 37.7522 23.8303C39.0261 25.1215 39.5867 26.5589 39.6171 28.3518C39.6002 30.4345 38.6962 31.9118 37.2655 33.3425C35.8752 34.468 34.3189 34.6908 32.5897 34.6994C32.296 34.702 32.0024 34.7047 31.7087 34.7075C31.2467 34.7113 30.7846 34.7148 30.3226 34.7172C29.8761 34.7198 29.4295 34.7242 28.983 34.7287C28.9142 34.7289 28.9142 34.7289 28.5662 34.7296C27.2604 34.7453 26.6214 34.9665 25.7007 35.8994C25.1037 36.7279 25.0949 37.4212 25.1377 38.4329C25.3457 39.2065 25.6559 39.7019 26.1699 40.3095C26.3774 40.5614 26.5845 40.8137 26.7915 41.066C26.9056 41.2042 27.0196 41.3423 27.1372 41.4846C27.8446 42.3425 28.5473 43.2036 29.2312 44.0803C29.5628 44.5047 29.902 44.9199 30.2516 45.3295C30.6921 45.8456 31.1129 46.3745 31.53 46.9096C32.0183 47.5312 32.5199 48.142 33.0196 48.7544C33.6899 49.5756 34.3548 50.4 35.0076 51.235C35.2955 51.5996 35.588 51.9601 35.8815 52.32C36.4372 53.0018 36.9821 53.6912 37.5236 54.3843C38.0478 55.0538 38.574 55.7215 39.107 56.384C39.6238 57.0287 40.1275 57.6824 40.6258 58.3414C40.8452 58.6272 41.0742 58.9058 41.3061 59.1815C41.5583 59.5451 41.5583 59.5451 41.5583 60.2019C41.183 60.7649 41.183 60.7649 40.7138 60.9525C40.3422 60.9707 39.9699 60.977 39.5978 60.9776C39.3623 60.9784 39.1267 60.9792 38.8839 60.98C38.6219 60.9799 38.3598 60.9799 38.0977 60.9797C37.8224 60.9803 37.5471 60.981 37.2719 60.9817C36.5228 60.9833 35.7739 60.9838 35.0249 60.9839C34.5566 60.9841 34.0883 60.9844 33.62 60.9849C31.9848 60.9867 30.3497 60.9874 28.7146 60.9873C27.1929 60.9872 25.6712 60.9891 24.1494 60.9921C22.8417 60.9946 21.534 60.9956 20.2263 60.9955C19.4459 60.9954 18.6655 60.996 17.8851 60.9979C17.1498 60.9997 16.4146 60.9997 15.6792 60.9984C15.4106 60.9982 15.1418 60.9986 14.8732 60.9998C11.4288 61.0134 8.7039 60.2514 6.1837 57.7622C5.3621 56.7996 4.736 55.8156 4.2132 54.6658C4.1668 54.5729 4.1668 54.5729 3.9317 54.1028C3.8278 53.7448 3.7307 53.3849 3.6385 53.0237C3.5899 52.835 3.5413 52.6463 3.4912 52.4519C3.2812 51.5819 3.2612 50.758 3.2618 49.8684C3.2615 49.7124 3.2612 49.5564 3.2609 49.3956C3.2601 48.871 3.2599 48.3463 3.2598 47.8216C3.2593 47.4462 3.2589 47.0708 3.2584 46.6953C3.2572 45.6738 3.2565 44.6522 3.2561 43.6307C3.2559 42.9924 3.2555 42.3542 3.255 41.716C3.2538 39.7189 3.2529 37.722 3.2525 35.725C3.2521 33.42 3.2504 31.1149 3.2477 28.8099C3.2456 27.0284 3.2447 25.2468 3.2446 23.4652C3.2445 22.4011 3.2439 21.3372 3.2423 20.2731C3.2408 19.2716 3.2406 18.2701 3.2413 17.2685C3.2414 16.9015 3.241 16.5346 3.2401 16.1676C3.2389 15.6653 3.2394 15.163 3.2404 14.6607C3.2396 14.5166 3.2389 14.3727 3.2381 14.2242C3.2525 11.0522 4.4594 8.3409 6.6529 6.0609C8.8305 4.0392 11.3598 3.0505 14.3132 3.0438Z"
-				}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 					fill: "var(--rg-brand-relay)",
 					d: "M59.9494 15.444C60.4185 15.7255 60.4185 15.7255 60.7 16.1947C60.7278 16.6763 60.7388 17.1465 60.737 17.6282C60.7377 17.7767 60.7382 17.9253 60.7388 18.0784C60.7404 18.5782 60.7399 19.0782 60.7394 19.5781C60.7401 19.9356 60.7409 20.2932 60.7419 20.6507C60.7439 21.6235 60.7442 22.5963 60.744 23.5691C60.744 24.3804 60.7448 25.1917 60.7456 26.0029C60.7474 27.9165 60.7477 29.83 60.747 31.7435C60.7464 33.7194 60.7485 35.6953 60.752 37.6711C60.7549 39.3658 60.756 41.0606 60.7556 42.7553C60.7554 43.7682 60.756 44.7812 60.7582 45.7941C60.7604 46.7466 60.7602 47.699 60.7582 48.6514C60.7579 49.0014 60.7584 49.3513 60.7597 49.7013C60.7614 50.1784 60.7603 50.6552 60.7583 51.1323C60.7595 51.2714 60.7607 51.4106 60.7619 51.5538C60.7556 52.2818 60.7228 52.7941 60.2309 53.3521C59.7617 53.5398 59.7617 53.5398 59.1049 53.5398C58.7545 53.3397 58.7545 53.3397 58.3777 53.0589C58.2378 52.956 58.0978 52.853 57.9536 52.747C57.8071 52.637 57.6606 52.5271 57.5098 52.4138C57.2146 52.1967 56.9195 51.9798 56.6242 51.7628C56.4759 51.6531 56.3277 51.5434 56.1748 51.4305C55.736 51.1068 55.2951 50.7861 54.8532 50.4668C54.7158 50.3672 54.5785 50.2677 54.4371 50.1651C54.1784 49.9806 53.9173 49.7993 53.6534 49.6219C53.0261 49.197 52.6128 48.9063 52.349 48.1914C52.3015 47.6644 52.3015 47.6644 52.3007 47.0447C52.2995 46.8094 52.2983 46.5742 52.2971 46.3318C52.2977 46.0716 52.2983 45.8114 52.299 45.5512C52.2982 45.2769 52.2975 45.0025 52.2964 44.7281C52.2944 43.9833 52.2947 43.2385 52.2955 42.4936C52.296 41.872 52.2953 41.2503 52.2946 40.6286C52.293 39.1622 52.2934 37.6958 52.2949 36.2294C52.2965 34.7161 52.295 33.2028 52.2919 31.6894C52.2895 30.3904 52.2888 29.0913 52.2896 27.7922C52.2901 27.0162 52.2899 26.2403 52.2879 25.4644C52.2862 24.7348 52.2868 24.0054 52.289 23.2758C52.2895 23.008 52.2892 22.7402 52.288 22.4724C52.2865 22.107 52.2882 21.7417 52.2901 21.3762C52.2901 21.1717 52.2902 20.9672 52.2903 20.7564C52.3529 20.1945 52.4726 19.9197 52.8182 19.4788C53.1173 19.2424 53.1173 19.2424 53.475 19.0273C54.2436 18.552 55.0014 18.0637 55.7562 17.567C55.8736 17.4905 55.9909 17.414 56.1117 17.3351C56.6434 16.9883 57.1712 16.6384 57.6938 16.2779C57.7746 16.2226 57.7746 16.2226 58.1842 15.9425C58.2536 15.894 58.2536 15.894 58.6046 15.6482C59.0937 15.4025 59.4083 15.385 59.9494 15.444Z"
 				})] })
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 				fill: "var(--rg-brand-body)",
 				d: "M124.27 50.0V17.060000000000002H129.94310052490235V25.051003723144532L129.15010052490234 24.014003723144533Q129.74993634033203 22.42799627685547 130.72594192504883 21.106324645996096Q131.70194750976563 19.78465301513672 132.9931303100586 18.93064929199219Q134.2334605407715 18.005494415283202 135.7838682098389 17.50225Q137.33427587890625 16.999005584716798 138.9507684326172 16.892255584716796Q140.56726098632814 16.785505584716795 142.04142889404298 17.060000000000002V23.03810797119141Q140.44527587890624 22.60094192504883 138.47295216369628 22.78902215576172Q136.50062844848634 22.97710238647461 134.8638056640625 24.05474609375Q133.3083112487793 25.040893524169924 132.39838868713377 26.48454002380371Q131.4884661254883 27.9281865234375 131.09195867919922 29.681921630859375Q130.69545123291016 31.43565673828125 130.69545123291016 33.36732092285156V50.0Z M161.8562088623047 50.915Q156.9253674621582 50.915 153.22977420043946 48.75966511535644Q149.5341809387207 46.60433023071289 147.47034046936034 42.75116511535644Q145.4065 38.897999999999996 145.4065 33.81467535400391Q145.4065 28.416175354003908 147.43475651550293 24.451173492431643Q149.46301303100586 20.486171630859374 153.08743745422362 18.31558581542969Q156.7118618774414 16.145000000000003 161.53086560058594 16.145000000000003Q166.56337490844726 16.145000000000003 170.10138049316407 18.48333953857422Q173.63938607788086 20.82167907714844 175.3931351470947 25.1221865234375Q177.1468842163086 29.422693969726563 176.8012070007324 35.31936560058594H170.4164292602539V33.00132092285156Q170.35543298339843 27.27752978515625 168.23571463012695 24.537645385742188Q166.11599627685547 21.797760986328125 161.774873046875 21.797760986328125Q156.99657260131835 21.797760986328125 154.58709773254395 24.812150970458987Q152.17762286376953 27.826540954589845 152.17762286376953 33.53Q152.17762286376953 38.94878369140625 154.58709773254395 41.922505767822265Q156.99657260131835 44.89622784423828 161.53086560058594 44.89622784423828Q164.51983209228516 44.89622784423828 166.70563812255858 43.54407855224609Q168.89144415283204 42.19192926025391 170.11142553710937 39.65029486083984L176.3538842163086 41.64298510742188Q174.4425539855957 46.055324645996095 170.5385474700928 48.48516232299805Q166.63454095458985 50.915 161.8562088623047 50.915ZM150.10359307861327 35.31936560058594V30.35795904541016H173.6088246459961V35.31936560058594Z M184.233 50.0V5.164999999999999H190.61778332519532V50.0Z M209.0498246459961 50.915Q205.41016418457033 50.915 202.92949906921388 49.56283302307129Q200.44883395385745 48.21066604614258 199.18816697692873 45.96383116149902Q197.9275 43.71699627685547 197.9275 41.03299255371094Q197.9275 38.54217163085937 198.81707185363769 36.64608860778809Q199.7066437072754 34.750005584716796 201.43496742248536 33.418165115356445Q203.16329113769532 32.08632464599609 205.71513067626955 31.272981384277344Q207.8907762451172 30.63247952270508 210.67134437561037 30.139394638061525Q213.45191250610353 29.64630975341797 216.51208786010744 29.22947300720215Q219.57226321411133 28.812636260986327 222.59181347656252 28.365294860839843L220.29410461425783 29.666649291992186Q220.3449348449707 25.772874908447267 218.65220252990724 23.907321670532227Q216.95947021484375 22.04176843261719 212.85218652343752 22.04176843261719Q210.2495670166016 22.04176843261719 208.08916120910646 23.246498886108398Q205.92875540161134 24.45122933959961 205.06459307861329 27.226697692871095L199.12716418457032 25.396664184570312Q200.32683395385743 21.147007446289063 203.75808488464355 18.64600372314453Q207.1893358154297 16.145000000000003 212.8928507080078 16.145000000000003Q217.32551303100587 16.145000000000003 220.5991865234375 17.65982278442383Q223.87286001586915 19.17464556884766 225.39787304687502 22.427981384277345Q226.1908842163086 24.054660461425783 226.37388421630862 25.85416232299805Q226.55688421630862 27.653664184570314 226.55688421630862 29.70734326171875V50.0H220.9244515991211V42.47671258544922L222.02244787597658 43.43240655517578Q219.97892553710938 47.2143786315918 216.81711485290526 49.0646893157959Q213.65530416870118 50.915 209.0498246459961 50.915ZM210.18852978515625 45.709585998535154Q212.90300372314454 45.709585998535154 214.86006347656252 44.7437622833252Q216.8171232299805 43.77793856811523 218.00152438354496 42.27838346862793Q219.1859255371094 40.778828369140626 219.56208972167968 39.182716308593754Q220.07043112182618 37.71872375488282 220.14159996032714 35.87856050109863Q220.21276879882814 34.03839724731445 220.21276879882814 32.960723754882814L222.28679113769533 33.713048400878904Q219.28758227539063 34.17055770874023 216.81201042175294 34.53147747802734Q214.33643856811526 34.892397247314456 212.3438078918457 35.2533123626709Q210.35117721557617 35.614227478027345 208.78554095458986 36.09205584716797Q207.47404653930664 36.53939166259766 206.44723027038575 37.179887008666995Q205.42041400146485 37.820382354736324 204.825678894043 38.74553350830078Q204.2309437866211 39.67068466186524 204.2309437866211 40.9719888305664Q204.2309437866211 42.252979522705076 204.87143913269045 43.33062974548339Q205.51193447875977 44.408279968261716 206.82850074768066 45.058932983398435Q208.1450670166016 45.709585998535154 210.18852978515625 45.709585998535154Z M237.11998510742185 64.64 243.48431719970702 47.275328369140624 243.58598510742186 52.399328369140626 229.21032092285157 17.060000000000002H235.8797721557617L246.61570513916016 44.34719061279297H244.66370513916016L254.9116641845703 17.060000000000002H261.3574437866211L243.19974981689452 64.64Z M289.24445904541017 50.0V33.814705139160154Q289.24445904541017 31.883087493896486 288.9242211456299 29.854854248046877Q288.60398324584963 27.826621002197268 287.7093320922852 26.08303611755371Q286.8146809387207 24.339451232910157 285.1829421081543 23.271943786621094Q283.5512032775879 22.20443634033203 280.9282014160156 22.20443634033203Q279.21007446289065 22.20443634033203 277.6901761016846 22.77883842468262Q276.1702777404785 23.353240509033203 275.0214493713379 24.60372282409668Q273.87262100219726 25.854205139160158 273.21178611755374 27.887527923583985Q272.55095123291017 29.920850708007812 272.55095123291017 32.85902606201172L268.58590283203125 31.374645568847658Q268.58590283203125 26.891180938720705 270.26339724731446 23.45993186950684Q271.94089166259766 20.02868280029297 275.0874774780274 18.097005584716797Q278.23406329345704 16.165328369140624 282.6769214477539 16.165328369140624Q286.0929493713379 16.165328369140624 288.41603984069826 17.273507446289063Q290.7391303100586 18.3816865234375 292.18787472534177 20.165950485229494Q293.636619140625 21.950214447021484 294.39910797119137 24.04455305480957Q295.1615968017578 26.138891662597658 295.4360874938965 28.156961654663085Q295.71057818603515 30.175031646728517 295.71057818603515 31.699988830566408V50.0ZM266.0848320922852 50.0V17.060000000000002H271.7986005249023V26.57608563232422H272.55095123291017V50.0Z M312.9328246459961 50.915Q309.2931641845703 50.915 306.81249906921386 49.56283302307129Q304.3318339538574 48.21066604614258 303.0711669769287 45.96383116149902Q301.8105 43.71699627685547 301.8105 41.03299255371094Q301.8105 38.54217163085937 302.7000718536377 36.64608860778809Q303.5896437072754 34.750005584716796 305.31796742248537 33.418165115356445Q307.0462911376953 32.08632464599609 309.59813067626953 31.272981384277344Q311.7737762451172 30.63247952270508 314.5543443756103 30.139394638061525Q317.3349125061035 29.64630975341797 320.3950878601074 29.22947300720215Q323.4552632141113 28.812636260986327 326.4748134765625 28.365294860839843L324.1771046142578 29.666649291992186Q324.2279348449707 25.772874908447267 322.5352025299072 23.907321670532227Q320.84247021484373 22.04176843261719 316.7351865234375 22.04176843261719Q314.13256701660157 22.04176843261719 311.97216120910645 23.246498886108398Q309.8117554016113 24.45122933959961 308.9475930786133 27.226697692871095L303.0101641845703 25.396664184570312Q304.2098339538574 21.147007446289063 307.64108488464353 18.64600372314453Q311.07233581542965 16.145000000000003 316.7758507080078 16.145000000000003Q321.20851303100585 16.145000000000003 324.48218652343746 17.65982278442383Q327.75586001586913 19.17464556884766 329.280873046875 22.427981384277345Q330.07388421630856 24.054660461425783 330.25688421630855 25.85416232299805Q330.4398842163086 27.653664184570314 330.4398842163086 29.70734326171875V50.0H324.80745159912107V42.47671258544922L325.90544787597656 43.43240655517578Q323.86192553710936 47.2143786315918 320.70011485290524 49.0646893157959Q317.5383041687012 50.915 312.9328246459961 50.915ZM314.07152978515626 45.709585998535154Q316.7860037231445 45.709585998535154 318.7430634765625 44.7437622833252Q320.7001232299805 43.77793856811523 321.8845243835449 42.27838346862793Q323.06892553710935 40.778828369140626 323.44508972167966 39.182716308593754Q323.95343112182616 37.71872375488282 324.0245999603271 35.87856050109863Q324.0957687988281 34.03839724731445 324.0957687988281 32.960723754882814L326.1697911376953 33.713048400878904Q323.17058227539064 34.17055770874023 320.69501042175295 34.53147747802734Q318.2194385681152 34.892397247314456 316.2268078918457 35.2533123626709Q314.23417721557615 35.614227478027345 312.66854095458984 36.09205584716797Q311.3570465393066 36.53939166259766 310.33023027038575 37.179887008666995Q309.30341400146483 37.820382354736324 308.7086788940429 38.74553350830078Q308.11394378662106 39.67068466186524 308.11394378662106 40.9719888305664Q308.11394378662106 42.252979522705076 308.75443913269044 43.33062974548339Q309.39493447875975 44.408279968261716 310.71150074768065 45.058932983398435Q312.02806701660154 45.709585998535154 314.07152978515626 45.709585998535154Z"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+			/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 				fill: "var(--rg-brand-body)",
 				d: "M130.40132330322265 94.435Q128.1876492614746 94.435 126.42348318481444 93.6689147491455Q124.6593171081543 92.90282949829101 123.41957109069824 91.4769946899414Q122.17982507324218 90.0511598815918 121.52491253662109 88.0453272857666Q120.87 86.0394946899414 120.87 83.56Q120.87 80.27817227172852 122.00824424743652 77.83975531005859Q123.14648849487304 75.40133834838866 125.2804019165039 74.05283613586425Q127.41431533813477 72.70433392333985 130.40132330322265 72.70433392333985Q133.73630206298827 72.70433392333985 135.82912890625 74.26065766906738Q137.9219557495117 75.81698141479492 138.7436235961914 78.43662359619141L136.6073480834961 78.95862182617188Q135.9161775817871 77.04461917114259 134.35741917419432 75.90153436279297Q132.79866076660156 74.75844955444336 130.48831799316406 74.75361651611328Q128.0378038330078 74.74395043945313 126.41379454040528 75.85562403869629Q124.78978524780274 76.96729763793945 123.97053038024902 78.95864218139648Q123.1512755126953 80.94998672485352 123.13194158935546 83.56Q123.11260766601562 86.17001327514649 123.93186253356933 88.15169174194335Q124.75111740112305 90.13337020874023 126.39446061706543 91.25471076965331Q128.0378038330078 92.37605133056641 130.48831799316406 92.38571740722657Q132.72617846679688 92.39538348388672 134.19310649108888 91.5205384979248Q135.66003451538086 90.64569351196289 136.41886799621582 89.02650973510742Q137.1777014770508 87.40732595825196 137.2840283203125 85.18397521972656H132.46998229980468V83.35701239013672H139.51696813964844Q139.55563510131836 83.69051681518555 139.5653016204834 84.0626802368164Q139.57496813964843 84.43484365844726 139.57496813964843 84.59434631347656Q139.57496813964843 87.41217404174805 138.5599743347168 89.6403379058838Q137.54498052978516 91.86850177001953 135.50531932067872 93.15175088500976Q133.46565811157225 94.435 130.40132330322265 94.435Z M146.9603374633789 94.435Q145.1816678466797 94.435 143.99025044250487 93.79458348083496Q142.79883303833006 93.15416696166992 142.20191651916502 92.09808436584473Q141.605 91.04200177001952 141.605 89.79500354003906Q141.605 88.51416430664062 142.11733879089354 87.61033082580566Q142.6296775817871 86.7064973449707 143.52626548767088 86.1289174041748Q144.42285339355467 85.5513374633789 145.58768377685547 85.24200885009766Q146.7863604736328 84.95200973510742 148.2267010345459 84.72967713928223Q149.66704159545898 84.50734454345704 151.0542041320801 84.3357628326416Q152.44136666870116 84.16418112182618 153.48534277343748 84.01435162353516L152.7216961669922 84.46867492675781Q152.7700309753418 82.15831356811523 151.827522567749 81.03696592712402Q150.88501416015623 79.91561828613281 148.5456572265625 79.91561828613281Q146.94096813964842 79.91561828613281 145.8292963104248 80.64062757873535Q144.71762448120117 81.36563687133788 144.2729557495117 82.93165191650391L142.1946678466797 82.32266784667969Q142.74083303833007 80.22499645996093 144.3648325958252 79.06499822998046Q145.98883215332032 77.905 148.58432507324218 77.905Q150.72549380493163 77.905 152.2286572265625 78.70733834838867Q153.73182064819335 79.50967669677735 154.355314453125 81.03700885009766Q154.6453091430664 81.71366961669922 154.7323091430664 82.55466873168945Q154.8193091430664 83.39566784667969 154.8193091430664 84.27532861328125V94.0H152.9150230102539V90.06564483642578L153.46602478027344 90.30729852294922Q152.66853540039062 92.3228117980957 150.98894129943847 93.37890589904785Q149.3093471984863 94.435 146.9603374633789 94.435ZM147.20198583984376 92.58870501708985Q148.69549822998047 92.58870501708985 149.8095927734375 92.05461711120606Q150.92368731689453 91.52052920532226 151.60761135864257 90.58768244934082Q152.29153540039061 89.65483569335937 152.4897032470703 88.47064306640625Q152.66853274536132 87.71663952636719 152.68544837951657 86.81522123718261Q152.70236401367185 85.91380294799805 152.70236401367185 85.45463952636719L153.51435339355467 85.8799769897461Q152.41720678710936 86.02497256469726 151.15086799621582 86.17238775634766Q149.88452920532225 86.31980294799804 148.6568454284668 86.50347035217285Q147.4291616516113 86.68713775634765 146.44798052978516 86.95297344970703Q145.78097787475585 87.14630560302734 145.159886428833 87.48705781555176Q144.53879498291016 87.82781002807617 144.14003790283203 88.38848406982422Q143.7412808227539 88.94915811157226 143.7412808227539 89.7950053100586Q143.7412808227539 90.47650973510743 144.0820330352783 91.11693421936036Q144.42278524780272 91.75735870361328 145.18162669372558 92.17303186035156Q145.94046813964843 92.58870501708985 147.20198583984376 92.58870501708985Z M167.11047344970706 94.0Q165.78614926147463 94.27549911499024 164.5029076690674 94.21991519165039Q163.2196660766602 94.16433126831055 162.21192271423342 93.6689151916504Q161.20417935180666 93.17349911499024 160.69184985351563 92.13433569335938Q160.2665212402344 91.26434188842774 160.22785427856448 90.36776504516601Q160.18918731689456 89.4711882019043 160.18918731689456 88.32569616699219V73.99H162.31579852294925V88.24836755371093Q162.31579852294925 89.22953628540039 162.33754852294925 89.88928407287597Q162.35929852294925 90.54903186035156 162.63479852294924 91.06136755371094Q163.15679852294923 92.03287197875977 164.2926315612793 92.21654203796388Q165.42846459960938 92.40021209716797 167.11047344970706 92.13437640380859ZM156.8445 80.16696282958985V78.34H167.11047344970706V80.16696282958985Z M176.24064660644532 94.435Q173.9593171081543 94.435 172.27973849487304 93.42241740417481Q170.6001598815918 92.40983480834961 169.6745799407959 90.5659174041748Q168.749 88.722 168.749 86.23766253662109Q168.749 83.6711625366211 169.66249690246582 81.80066342163086Q170.57599380493164 79.93016430664062 172.2386567840576 78.91758215332031Q173.90131976318358 77.905 176.16331799316407 77.905Q178.48331356811522 77.905 180.12181091308594 78.96833038330078Q181.76030825805663 80.03166076660156 182.6013087005615 82.0181572265625Q183.4423091430664 84.00465368652344 183.36014749145508 86.76931799316407H181.1900336303711V86.01533923339844Q181.13203186035156 82.96548583984375 179.87776681518554 81.41155383300782Q178.62350177001952 79.85762182617188 176.221314453125 79.85762182617188Q173.69346548461914 79.85762182617188 172.3522035369873 81.49855117797853Q171.01094158935547 83.13948052978516 171.01094158935547 86.17Q171.01094158935547 89.13285693359376 172.3522035369873 90.76412020874024Q173.69346548461914 92.39538348388672 176.16331799316407 92.39538348388672Q177.84533392333984 92.39538348388672 179.0971802368164 91.6172085571289Q180.34902655029296 90.83903363037109 181.0740354003906 89.37935162353516L183.0653091430664 90.14300708007812Q182.1324743347168 92.1923374633789 180.327227432251 93.31366873168946Q178.52198052978517 94.435 176.24064660644532 94.435ZM170.25695574951172 86.76931799316407V84.98101947021485H182.2243374633789V86.76931799316407Z M189.3245 94.0 184.5395 78.33033392333985 186.6757808227539 78.34 190.38780737304685 90.50075280761719 194.11433303833007 78.34H196.05729232788084L199.78381799316406 90.50075280761719L203.51517846679687 78.34H205.63212536621091L200.84712536621092 94.0H198.99116076660155L195.08581268310547 81.52993096923828L191.18046459960937 94.0Z M211.8623374633789 94.435Q210.0836678466797 94.435 208.8922504425049 93.79458348083496Q207.70083303833007 93.15416696166992 207.10391651916504 92.09808436584473Q206.507 91.04200177001952 206.507 89.79500354003906Q206.507 88.51416430664062 207.01933879089356 87.61033082580566Q207.5316775817871 86.7064973449707 208.4282654876709 86.1289174041748Q209.3248533935547 85.5513374633789 210.4896837768555 85.24200885009766Q211.68836047363283 84.95200973510742 213.1287010345459 84.72967713928223Q214.569041595459 84.50734454345704 215.95620413208007 84.3357628326416Q217.34336666870118 84.16418112182618 218.38734277343752 84.01435162353516L217.6236961669922 84.46867492675781Q217.6720309753418 82.15831356811523 216.72952256774903 81.03696592712402Q215.78701416015625 79.91561828613281 213.4476572265625 79.91561828613281Q211.84296813964843 79.91561828613281 210.7312963104248 80.64062757873535Q209.61962448120119 81.36563687133788 209.17495574951172 82.93165191650391L207.0966678466797 82.32266784667969Q207.64283303833008 80.22499645996093 209.2668325958252 79.06499822998046Q210.89083215332033 77.905 213.4863250732422 77.905Q215.62749380493165 77.905 217.1306572265625 78.70733834838867Q218.63382064819336 79.50967669677735 219.25731445312502 81.03700885009766Q219.54730914306643 81.71366961669922 219.63430914306642 82.55466873168945Q219.7213091430664 83.39566784667969 219.7213091430664 84.27532861328125V94.0H217.8170230102539V90.06564483642578L218.36802478027346 90.30729852294922Q217.57053540039064 92.3228117980957 215.8909412994385 93.37890589904785Q214.21134719848635 94.435 211.8623374633789 94.435ZM212.10398583984374 92.58870501708985Q213.5974982299805 92.58870501708985 214.71159277343753 92.05461711120606Q215.82568731689454 91.52052920532226 216.5096113586426 90.58768244934082Q217.19353540039063 89.65483569335937 217.39170324707032 88.47064306640625Q217.57053274536133 87.71663952636719 217.58744837951662 86.81522123718261Q217.6043640136719 85.91380294799805 217.6043640136719 85.45463952636719L218.4163533935547 85.8799769897461Q217.31920678710938 86.02497256469726 216.0528679962158 86.17238775634766Q214.78652920532227 86.31980294799804 213.55884542846678 86.50347035217285Q212.33116165161132 86.68713775634765 211.34998052978517 86.95297344970703Q210.68297787475586 87.14630560302734 210.06188642883302 87.48705781555176Q209.44079498291018 87.82781002807617 209.04203790283205 88.38848406982422Q208.64328082275392 88.94915811157226 208.64328082275392 89.7950053100586Q208.64328082275392 90.47650973510743 208.98403303527834 91.11693421936036Q209.32478524780274 91.75735870361328 210.0836266937256 92.17303186035156Q210.84246813964845 92.58870501708985 212.10398583984374 92.58870501708985Z M224.84950708007813 100.96 227.88484100341796 92.74333569335937 227.92350708007814 95.17933569335938 221.06983923339843 78.34H223.32211651611328L228.94814837646484 92.42440118408203H228.02014837646485L233.2111678466797 78.34H235.39578082275392L226.97612713623047 100.96Z"
 			})
@@ -20144,16 +20075,16 @@ function RelaynaLogo() {
 	});
 }
 function GatewaySignalArtwork() {
-	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("svg", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("svg", {
 		className: "gateway-signal-artwork",
 		viewBox: "940 120 620 360",
 		preserveAspectRatio: "xMidYMid meet",
 		"aria-hidden": "true",
 		focusable: "false",
-		children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("g", {
 			xmlns: "http://www.w3.org/2000/svg",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("rect", {
 					x: "1108.0",
 					y: "172.0",
 					width: "256",
@@ -20161,10 +20092,10 @@ function GatewaySignalArtwork() {
 					rx: "62.72",
 					fill: "var(--rn-color-surface-subtle)"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("g", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("g", {
 					transform: "translate(1154.0 218.0) scale(1.28125)",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M42 110V40Q42 18 64 18H71Q91 18 91 39V44",
 							fill: "none",
 							stroke: "var(--rn-color-brand-frame)",
@@ -20172,7 +20103,7 @@ function GatewaySignalArtwork() {
 							strokeLinecap: "round",
 							strokeLinejoin: "round"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M91 88V110",
 							fill: "none",
 							stroke: "var(--rn-color-brand-frame)",
@@ -20180,7 +20111,7 @@ function GatewaySignalArtwork() {
 							strokeLinecap: "round",
 							strokeLinejoin: "round"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M8 65H66Q81 65 91 50L111 30",
 							fill: "none",
 							stroke: "var(--rn-color-pictogram-accent)",
@@ -20188,7 +20119,7 @@ function GatewaySignalArtwork() {
 							strokeLinecap: "round",
 							strokeLinejoin: "round"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M66 65Q81 65 91 80L111 100",
 							fill: "none",
 							stroke: "var(--rn-color-pictogram-accent)",
@@ -20196,19 +20127,19 @@ function GatewaySignalArtwork() {
 							strokeLinecap: "round",
 							strokeLinejoin: "round"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M101 19H124V42Z",
 							fill: "var(--rn-color-pictogram-accent)",
 							fillRule: "evenodd"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 							d: "M101 111H124V88Z",
 							fill: "var(--rn-color-pictogram-accent)",
 							fillRule: "evenodd"
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 					d: "M994 300L1102 300",
 					fill: "none",
 					stroke: "var(--rn-color-pictogram-accent)",
@@ -20216,13 +20147,13 @@ function GatewaySignalArtwork() {
 					strokeLinecap: "round",
 					strokeLinejoin: "round"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("circle", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("circle", {
 					cx: "982",
 					cy: "300",
 					r: "12",
 					fill: "var(--rn-color-pictogram-accent)"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 					d: "M1370 270C1415 270 1410 174 1470 174",
 					fill: "none",
 					stroke: "var(--rn-color-brand-leaf)",
@@ -20230,7 +20161,7 @@ function GatewaySignalArtwork() {
 					strokeLinecap: "round",
 					strokeLinejoin: "round"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("path", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("path", {
 					d: "M1370 330C1415 330 1410 426 1470 426",
 					fill: "none",
 					stroke: "var(--rn-color-brand-frame)",
@@ -20238,7 +20169,7 @@ function GatewaySignalArtwork() {
 					strokeLinecap: "round",
 					strokeLinejoin: "round"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("rect", {
 					x: "1482",
 					y: "160",
 					width: "38",
@@ -20246,7 +20177,7 @@ function GatewaySignalArtwork() {
 					rx: "12",
 					fill: "var(--rn-color-brand-leaf)"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("rect", {
 					x: "1482",
 					y: "412",
 					width: "38",
@@ -20258,8 +20189,7 @@ function GatewaySignalArtwork() {
 		})
 	});
 }
-//#endregion
-//#region crates/gateway-api/admin-ui/src/brand-identity.ts
+// crates/gateway-api/admin-ui/src/brand-identity.ts
 var brandIdentity = {
 	"name": "relayna",
 	"system": "Natural Connection",
@@ -20374,8 +20304,7 @@ var brandIdentity = {
 		"Studio": "Manrope"
 	}
 };
-//#endregion
-//#region crates/gateway-api/admin-ui/src/theme-preference.ts
+// crates/gateway-api/admin-ui/src/theme-preference.ts
 var THEME_STORAGE_KEY = "relayna.theme";
 var THEME_CHANGE_EVENT = "relayna:theme-change";
 var preference = "system";
@@ -20462,27 +20391,26 @@ function initializeThemePreference() {
 	dispose = cleanup;
 	return cleanup;
 }
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/shell.tsx
-var import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
+// crates/gateway-api/admin-ui/src/react/shell.tsx
+var import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
 function ThemeSwitcher() {
-	const preference = (0, import_react$7.useSyncExternalStore)(subscribeThemePreference, getThemePreference, () => "system");
-	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
+	const preference = (0, import_react$8.useSyncExternalStore)(subscribeThemePreference, getThemePreference, () => "system");
+	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("label", {
 		className: "theme-control",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Theme" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Theme" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(NativeSelect, {
 			className: "theme-switcher",
 			value: preference,
 			onChange: (event) => setThemePreference(event.currentTarget.value),
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 					value: "light",
 					children: "Light"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 					value: "dark",
 					children: "Dark"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 					value: "system",
 					children: "System"
 				})
@@ -20492,134 +20420,134 @@ function ThemeSwitcher() {
 }
 /** Controller viewport children are deliberately outside React reconciliation. */
 function ConsoleShell() {
-	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("a", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(import_jsx_runtime$10.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("a", {
 			className: "skip-link",
 			href: "#content",
 			children: "Skip to main content"
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+		/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 			id: "login",
 			className: "login-shell",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 				className: "login-brand-panel",
 				"aria-label": "Relayna Gateway overview",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
 						className: "login-brand-lockup",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaLogo, {})
+						children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(RelaynaLogo, {})
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 						className: "login-brand-message",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 								className: "login-brand-eyebrow",
 								children: "AI traffic control"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("h1", { children: brandIdentity.taglines.Gateway }),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", { children: brandIdentity.taglines.relayna }),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("ul", {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("h1", { children: brandIdentity.taglines.Gateway }),
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", { children: brandIdentity.taglines.relayna }),
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("ul", {
 								className: "login-capabilities",
 								"aria-label": "Gateway capabilities",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-shield-check",
 										"aria-hidden": "true"
 									}), "Work account sign-in"] }),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-chart-histogram",
 										"aria-hidden": "true"
 									}), "Usage visibility"] }),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-key",
 										"aria-hidden": "true"
 									}), "Key governance"] }),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("li", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-lock-access",
 										"aria-hidden": "true"
 									}), "Scoped access"] })
 								]
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(GatewaySignalArtwork, {})
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(GatewaySignalArtwork, {})
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", {
 						className: "login-copyright",
 						children: "relayna · Gateway / SDK / Studio"
 					})
 				]
-			}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("section", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("section", {
 				className: "login-access-panel",
 				"aria-labelledby": "login-title",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 					className: "login-access-card",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ThemeSwitcher, {}),
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 							className: "login-access-eyebrow",
 							children: "Organization access"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("h1", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("h1", {
 							id: "login-title",
 							children: "Welcome back"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 							className: "login-copy",
 							children: "Sign in with your work or school account. Relayna will resolve your administrator role and service or project memberships after Microsoft verifies your identity."
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("a", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("a", {
 							id: "entra-sign-in",
 							className: "login-primary",
 							href: "/admin-ui/auth/login",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("img", {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("img", {
 								src: "/admin-ui/microsoft-sign-in.svg",
 								width: "215",
 								height: "41",
 								alt: "Sign in with Microsoft"
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 							id: "oidc-unavailable",
 							className: "subtle hidden",
 							children: "Microsoft sign-in is not configured for this gateway."
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
 							className: "login-session-divider",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Secure browser session" })
+							children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Secure browser session" })
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							className: "login-security-note",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 								className: "ti ti-shield-lock",
 								"aria-hidden": "true"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Your identity tokens stay server-side" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and exact resource memberships." })] })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", { children: "Your identity tokens stay server-side" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", { children: "The browser receives an HttpOnly session cookie. Gateway permissions come from Relayna roles and exact resource memberships." })] })]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("details", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("details", {
 							className: "break-glass-login",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("summary", { children: "Emergency operator access" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("form", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("summary", { children: "Emergency operator access" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("form", {
 								id: "login-form",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 										className: "help",
 										children: "Use the break-glass operator token only when Microsoft sign-in is unavailable."
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", { children: ["Operator token", /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("label", { children: ["Operator token", /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Input, {
 										id: "operator-token",
 										type: "password",
 										autoComplete: "current-password"
 									})] }),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 										type: "submit",
 										children: "Use operator token"
 									})
 								]
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 							id: "login-error",
 							className: "error-text"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 							id: "access-state-sign-out",
 							className: "login-access-sign-out hidden",
 							type: "button",
@@ -20629,260 +20557,260 @@ function ConsoleShell() {
 				})
 			})]
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("main", {
+		/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("main", {
 			id: "app",
 			className: "app-shell hidden",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 					id: "nav-backdrop",
 					className: "nav-backdrop hidden",
 					type: "button",
 					"aria-label": "Close navigation"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("aside", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("aside", {
 					id: "sidebar",
 					className: "sidebar",
 					"aria-label": "Admin navigation",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							className: "sidebar-header",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 								className: "brand",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(RelaynaLogo, {}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(RelaynaLogo, {}),
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 										className: "brand-meta",
-										children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+										children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 											className: "version-indicator",
 											"aria-label": "Current Relayna Gateway version",
-											children: "v1.2.0"
+											children: "v1.3.0"
 										})
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", {
 										className: "brand-tagline",
 										children: brandIdentity.taglines.Gateway
 									})
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 								id: "nav-close",
 								className: "icon-button nav-close",
 								type: "button",
 								"aria-label": "Close navigation",
-								children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+								children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 									className: "ti ti-x",
 									"aria-hidden": "true"
 								})
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("nav", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("nav", {
 							className: "nav-groups",
 							"aria-label": "Portal sections",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 									className: "nav-group",
 									"data-admin-nav": true,
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Monitor" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Monitor" }),
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "overview",
 											className: "nav active",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-layout-dashboard",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Overview" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Overview" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "traffic",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-activity",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Traffic" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Traffic" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "usage",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-chart-line",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Usage & cost" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Usage & cost" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "health",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-heart-rate-monitor",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Health" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Health" })]
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 									className: "nav-group",
 									"data-admin-nav": true,
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Discover" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Discover" }),
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "projects",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-folders",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Projects" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Projects" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "services",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-cube",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Services" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Services" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "providers",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-database",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Providers" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Providers" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "routes",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-route",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Routes" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Routes" })]
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 									className: "nav-group",
 									"data-admin-nav": true,
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Govern" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Govern" }),
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "keys",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-key",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Virtual keys" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Virtual keys" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "guardrails",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-shield-check",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Policies & guardrails" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Policies & guardrails" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "members",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-users",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "People & identities" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "People & identities" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "audit",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-file-search",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Audit log" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Audit log" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "settings",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-settings",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Settings" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Settings" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "managed-identities",
 											className: "nav",
 											hidden: true,
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-id-badge-2",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Managed identities" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Managed identities" })]
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 									className: "nav-group",
 									"data-owner-nav": true,
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Owner" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Owner" }),
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "my-services",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-cubes",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "My services" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "My services" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "service-dashboard",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-chart-histogram",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Service dashboard" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Service dashboard" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "my-projects",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-folders",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "My projects" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "My projects" })]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 											"data-view": "project-dashboard",
 											className: "nav",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-chart-histogram",
 												"aria-hidden": "true"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Project dashboard" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Project dashboard" })]
 										})
 									]
 								})
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							className: "sidebar-actions",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ThemeSwitcher, {}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ThemeSwitcher, {}),
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 									id: "rotate-token",
 									className: "danger",
 									"data-break-glass-only": true,
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-refresh",
 										"aria-hidden": "true"
-									}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Rotate token" })]
+									}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Rotate token" })]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 									id: "sign-out",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 										className: "ti ti-logout",
 										"aria-hidden": "true"
-									}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Sign out" })]
+									}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Sign out" })]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 									className: "session-context",
 									"aria-label": "Current session",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 										className: "environment-dot",
 										"aria-hidden": "true"
-									}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", {
+									}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", {
 										id: "session-name",
 										children: "Local"
-									}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", {
+									}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", {
 										id: "session-role",
 										children: "Portal session"
 									})] })]
@@ -20891,58 +20819,58 @@ function ConsoleShell() {
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("section", {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("section", {
 					className: "workspace",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("header", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("header", {
 							className: "global-toolbar",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 									className: "global-start",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 											id: "nav-toggle",
 											className: "icon-button",
 											type: "button",
 											"aria-label": "Open navigation",
 											"aria-controls": "sidebar",
 											"aria-expanded": "false",
-											children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-menu-2",
 												"aria-hidden": "true"
 											})
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 											id: "scope-context",
 											children: "Workspace"
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("label", {
 											className: "project-scope-control",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 												className: "sr-only",
 												children: "Project scope"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(NativeSelect, {
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(NativeSelect, {
 												id: "project-scope",
-												children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+												children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 													value: "",
 													children: "All projects"
 												})
 											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 											className: "breadcrumbs",
 											"aria-label": "Breadcrumb",
 											hidden: true,
 											children: [
-												/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+												/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 													id: "breadcrumb-domain",
 													children: "Monitor"
 												}),
-												/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+												/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 													className: "ti ti-chevron-right",
 													"aria-hidden": "true"
 												}),
-												/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", {
+												/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", {
 													id: "breadcrumb-title",
 													children: "Overview"
 												})
@@ -20950,7 +20878,7 @@ function ConsoleShell() {
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 									id: "command-trigger",
 									className: "command-trigger",
 									type: "button",
@@ -20958,45 +20886,45 @@ function ConsoleShell() {
 									"aria-label": "Jump to a page",
 									"aria-keyshortcuts": "Control+k Meta+k",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 											className: "ti ti-search",
 											"aria-hidden": "true"
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "Jump to a page…" }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("kbd", { children: "⌘K" })
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "Jump to a page…" }),
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("kbd", { children: "⌘K" })
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 									className: "global-end",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("label", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("label", {
 											id: "workspace-control",
 											className: "workspace-control hidden",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 												className: "sr-only",
 												children: "Workspace"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
+											}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(NativeSelect, {
 												id: "workspace-select",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 													value: "admin",
 													children: "Admin"
-												}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
+												}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("option", {
 													value: "owner",
 													children: "Owner"
 												})]
 											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 											id: "last-refreshed",
 											className: "last-refreshed",
 											children: "Not refreshed"
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
+										/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Button, {
 											id: "refresh",
 											className: "icon-button",
 											type: "button",
 											"aria-label": "Refresh current view",
-											children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-refresh",
 												"aria-hidden": "true"
 											})
@@ -21005,87 +20933,87 @@ function ConsoleShell() {
 								})
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("header", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("header", {
 							className: "view-toolbar",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", { children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", { children: [
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 										id: "view-domain",
 										className: "eyebrow",
 										children: "Monitor"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("h2", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("h2", {
 										id: "view-title",
 										children: "Overview"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("p", {
 										id: "view-summary",
 										className: "view-summary",
 										children: "Gateway posture, traffic, and service availability."
 									})
 								] }),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
 									id: "page-actions",
 									className: "actions"
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 									className: "governed-change",
 									hidden: true,
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 										id: "governed-change-trigger",
 										className: "primary",
 										type: "button",
 										"aria-expanded": "false",
 										"aria-controls": "governed-change-menu",
 										children: [
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-plus",
 												"aria-hidden": "true"
 											}),
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", { children: "New governed change" }),
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", { children: "New governed change" }),
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 												className: "ti ti-chevron-down",
 												"aria-hidden": "true"
 											})
 										]
-									}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+									}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 										id: "governed-change-menu",
 										className: "action-menu hidden",
 										role: "menu",
 										children: [
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 												type: "button",
 												role: "menuitem",
 												"data-governed-view": "keys",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 													className: "ti ti-key",
 													"aria-hidden": "true"
-												}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Create key" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Issue a virtual key with policy" })] })]
+												}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", { children: "Create key" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", { children: "Issue a virtual key with policy" })] })]
 											}),
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 												type: "button",
 												role: "menuitem",
 												"data-governed-view": "services",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 													className: "ti ti-cube-plus",
 													"aria-hidden": "true"
-												}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Register service" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Add an upstream service" })] })]
+												}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", { children: "Register service" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", { children: "Add an upstream service" })] })]
 											}),
-											/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Button, {
+											/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Button, {
 												type: "button",
 												role: "menuitem",
 												"data-governed-view": "providers",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("i", {
 													className: "ti ti-database-plus",
 													"aria-hidden": "true"
-												}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("strong", { children: "Add provider" }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("small", { children: "Connect a model provider" })] })]
+												}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("strong", { children: "Add provider" }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", { children: "Connect a model provider" })] })]
 											})
 										]
 									})]
 								})
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("section", {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("section", {
 							id: "content",
 							tabIndex: -1
 						})
@@ -21095,17 +21023,35 @@ function ConsoleShell() {
 		})
 	] });
 }
-//#endregion
-//#region \0vite/preload-helper.js
+// \0vite/preload-helper.js
 var scriptRel = "modulepreload";
 var assetsURL = function(dep) {
 	return "/admin-ui/" + dep;
 };
 var seen = {};
+var isCssPreloadUrl = function isCssPreloadUrl(url) {
+	return url.pathname.endsWith(".css");
+};
+var preloadOnce = function preloadOnce(seen, href, preload) {
+	if (href in seen) return seen[href];
+	const promise = preload();
+	if (!promise) {
+		seen[href] = void 0;
+		return;
+	}
+	const preloadPromise = promise.then(() => {
+		seen[href] = void 0;
+	}, (err) => {
+		seen[href] = void 0;
+		throw err;
+	});
+	seen[href] = preloadPromise;
+	return preloadPromise;
+};
 var __vitePreload = function preload(baseModule, deps, importerUrl) {
 	let promise = Promise.resolve();
 	if (deps && deps.length > 0) {
-		const links = document.getElementsByTagName("link");
+		let preloadedHrefs;
 		const cspNonceMeta = document.querySelector("meta[property=csp-nonce]");
 		const cspNonce = cspNonceMeta?.nonce || cspNonceMeta?.getAttribute("nonce");
 		function allSettled(promises) {
@@ -21118,33 +21064,48 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 			}))));
 		}
 		function importMetaResolve(specifier) {
-			if (import.meta.resolve) return import.meta.resolve(specifier);
+			if (import.meta.resolve) return new URL(import.meta.resolve(specifier));
 			return new URL(
 				specifier,
 				/** #__KEEP__ */
 				import.meta.url
-			).href;
+			);
 		}
-		promise = allSettled(deps.map((dep) => {
-			dep = assetsURL(dep, importerUrl);
-			dep = importMetaResolve(dep);
-			if (dep in seen) return;
-			seen[dep] = true;
-			const isCss = dep.endsWith(".css");
-			for (let i = links.length - 1; i >= 0; i--) {
-				const link = links[i];
-				if (link.href === dep && (!isCss || link.rel === "stylesheet")) return;
-			}
-			const link = document.createElement("link");
-			link.rel = isCss ? "stylesheet" : scriptRel;
-			if (!isCss) link.as = "script";
-			link.crossOrigin = "";
-			link.href = dep;
-			if (cspNonce) link.setAttribute("nonce", cspNonce);
-			document.head.appendChild(link);
-			if (isCss) return new Promise((res, rej) => {
-				link.addEventListener("load", res);
-				link.addEventListener("error", () => rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`)));
+		promise = allSettled(deps.map((depString) => {
+			depString = assetsURL(depString, importerUrl);
+			const dep = importMetaResolve(depString);
+			const isCss = isCssPreloadUrl(dep);
+			return preloadOnce(seen, dep.href, () => {
+				if (preloadedHrefs === void 0) {
+					preloadedHrefs = {
+						all: /* @__PURE__ */ new Set(),
+						styles: /* @__PURE__ */ new Set()
+					};
+					const links = document.getElementsByTagName("link");
+					for (let i = links.length - 1; i >= 0; i--) {
+						const link = links[i];
+						preloadedHrefs.all.add(link.href);
+						if (link.rel === "stylesheet") preloadedHrefs.styles.add(link.href);
+					}
+				}
+				if ((isCss ? preloadedHrefs.styles : preloadedHrefs.all).has(dep.href)) return;
+				const link = document.createElement("link");
+				link.rel = isCss ? "stylesheet" : scriptRel;
+				if (!isCss) link.as = "script";
+				link.crossOrigin = "";
+				link.href = dep.href;
+				if (cspNonce) link.setAttribute("nonce", cspNonce);
+				document.head.appendChild(link);
+				if (isCss) return new Promise((res, rej) => {
+					const handleSettle = (e) => {
+						link.removeEventListener("load", handleSettle);
+						link.removeEventListener("error", handleSettle);
+						if (e.type === "error") rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`));
+						else res(e);
+					};
+					link.addEventListener("load", handleSettle);
+					link.addEventListener("error", handleSettle);
+				});
 			});
 		}).filter((p) => p !== void 0));
 	}
@@ -21162,67 +21123,66 @@ var __vitePreload = function preload(baseModule, deps, importerUrl) {
 		return baseModule().catch(handlePreloadError);
 	});
 };
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/foundry-editor.tsx
+// crates/gateway-api/admin-ui/src/react/foundry-editor.tsx
 function FoundryIdentityFields({ identity, credentialConfigured = false }) {
-	const [method, setMethod] = (0, import_react$6.useState)(identity?.method || "workload_identity");
-	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+	const [method, setMethod] = (0, import_react$7.useState)(identity?.method || "workload_identity");
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 			className: "editor-section-heading",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("i", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("i", {
 				className: "ti ti-fingerprint",
 				"aria-hidden": "true"
 			}), "Azure identity"]
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+		/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 			label: "Azure identity",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
 				name: "foundry_method",
 				value: method,
 				onChange: (e) => setMethod(e.target.value),
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 						value: "workload_identity",
 						children: "Workload identity (AKS)"
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 						value: "managed_identity",
 						children: "Managed identity (Azure VM)"
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 						value: "client_secret",
 						children: "Client secret"
 					})
 				]
 			})
 		}),
-		method !== "managed_identity" && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+		method !== "managed_identity" && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 			label: "Tenant ID",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 				name: "tenant_id",
 				required: true,
 				defaultValue: identity?.tenant_id || ""
 			})
 		}),
-		/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+		/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 			label: method === "managed_identity" ? "Client ID (optional)" : "Client ID",
 			help: "For a user-assigned identity, enter its client ID. Leave blank for the VM's system-assigned identity.",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 				name: "client_id",
 				required: method !== "managed_identity",
 				defaultValue: identity?.client_id || ""
 			})
 		}),
-		method === "client_secret" && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+		method === "client_secret" && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 			label: credentialConfigured ? "Replace client secret (optional)" : "Client secret",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 				name: "credential",
 				type: "password",
 				autoComplete: "new-password",
 				required: !credentialConfigured
 			})
 		}),
-		method === "workload_identity" && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
+		method === "workload_identity" && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
 			className: "text-xs text-muted-foreground",
 			children: "Configure the pod’s federated identity and AZURE_FEDERATED_TOKEN_FILE before invoking this connection."
 		})
@@ -21231,9 +21191,9 @@ function FoundryIdentityFields({ identity, credentialConfigured = false }) {
 function FoundryEditor({ kind, record, providers, projects, onSave, onClose, restoreFocus }) {
 	const identity = record?.foundry;
 	const binding = record?.foundry;
-	const [mode, setMode] = (0, import_react$6.useState)(binding?.mode || "registered_agent");
-	const [busy, setBusy] = (0, import_react$6.useState)(false);
-	const [error, setError] = (0, import_react$6.useState)("");
+	const [mode, setMode] = (0, import_react$7.useState)(binding?.mode || "registered_agent");
+	const [busy, setBusy] = (0, import_react$7.useState)(false);
+	const [error, setError] = (0, import_react$7.useState)("");
 	const provider = kind === "provider";
 	const submit = async (event) => {
 		event.preventDefault();
@@ -21287,7 +21247,7 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 			setBusy(false);
 		}
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Dialog, {
+	return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Dialog, {
 		layout: "drawer",
 		title: provider ? "Azure Foundry connection" : "Foundry service",
 		onClose: () => {
@@ -21295,13 +21255,13 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 		},
 		restoreFocus,
 		description: provider ? "Azure credentials are used only by the gateway. Caller authentication is configured on each service." : "Register an existing agent or expose the project Responses endpoint.",
-		children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("form", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("form", {
 			onSubmit: submit,
 			className: "grid gap-4",
 			children: [
-				(provider || !record) && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+				(provider || !record) && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 					label: "Name",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 						name: "name",
 						required: true,
 						defaultValue: record?.name || "",
@@ -21309,123 +21269,123 @@ function FoundryEditor({ kind, record, providers, projects, onSave, onClose, res
 						placeholder: provider ? "Production Foundry" : "research-agent"
 					})
 				}),
-				provider ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+				provider ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 					label: "Project endpoint",
 					help: "Copy the project endpoint from Foundry. Use https://ACCOUNT.services.ai.azure.com/api/projects/PROJECT. Do not paste an agent or model deployment URL.",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 						name: "base_url",
 						required: true,
 						type: "url",
 						defaultValue: record?.base_url || "",
 						placeholder: "https://account.services.ai.azure.com/api/projects/project"
 					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(FoundryIdentityFields, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(FoundryIdentityFields, {
 					identity,
 					credentialConfigured: record?.credential_configured
-				})] }) : /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+				})] }) : /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 						label: "Foundry connection",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
 							name: "provider_id",
 							required: true,
 							defaultValue: binding?.provider_id || "",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 								value: "",
 								children: "Choose a connection…"
-							}), providers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("option", {
+							}), providers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("option", {
 								value: p.id,
 								children: [p.name, p.enabled ? "" : " (disabled)"]
 							}, p.id))]
 						})
 					}),
-					!providers.length && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
+					!providers.length && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
 						role: "status",
 						className: "text-xs text-muted-foreground",
 						children: "Add an Azure Foundry connection in Providers first."
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 						label: "Integration mode",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
 							value: mode,
 							onChange: (e) => setMode(e.target.value),
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 								value: "registered_agent",
 								children: "Registered agent"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 								value: "endpoint_passthrough",
 								children: "Foundry endpoint passthrough"
 							})]
 						})
 					}),
-					mode === "registered_agent" ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+					mode === "registered_agent" ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 						label: "Agent name",
 						help: "The existing Foundry agent's API name, not its display label or classic assistant ID. Use 1–128 letters, digits, hyphens or underscores. Callers cannot override this agent.",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 							name: "agent_name",
 							pattern: "[A-Za-z0-9_-]{1,128}",
 							title: "Use 1–128 letters, digits, hyphens or underscores.",
 							required: true,
 							defaultValue: binding?.agent_name || ""
 						})
-					}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 						label: "Agent version (optional)",
 						help: "Pin a version for predictable deployments. Blank uses Foundry's default version selection.",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Input, {
 							name: "agent_version",
 							pattern: "[A-Za-z0-9_-]{1,128}",
 							title: "Use 1–128 letters, digits, hyphens or underscores, or leave blank.",
 							defaultValue: binding?.agent_version || ""
 						})
-					})] }) : /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
+					})] }) : /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
 						className: "text-xs text-muted-foreground",
 						children: "Clients supply the model or agent reference. Only stateless POST responses is exposed; Azure management and conversation APIs remain closed."
 					}),
-					!record && /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+					!record && /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 							label: "Project (optional)",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
 								name: "project_id",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 									value: "",
 									children: "No project"
-								}), projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+								}), projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 									value: p.id,
 									children: p.name
 								}, p.id))]
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Field, {
 							label: "Caller authentication",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(NativeSelect, {
 								name: "caller_auth",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 									value: "inherit",
 									children: "Use gateway settings"
-								}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
+								}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("option", {
 									value: "key_only",
 									children: "Relayna key only"
 								})]
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
 							className: "text-xs text-muted-foreground",
 							children: "Invoke /services/NAME/responses with a permitted Relayna key. After creating the service, use Edit to configure authentication profiles, limits and pricing."
 						})
 					] })
 				] }),
-				error && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
+				error && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("p", {
 					role: "alert",
 					className: "text-xs text-destructive",
 					children: error
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 					className: "editor-form-actions",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
 						type: "submit",
 						variant: "default",
 						disabled: busy || !provider && !providers.length,
 						children: busy ? "Saving…" : "Save"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Button, {
 						disabled: busy,
 						onClick: onClose,
 						children: "Cancel"
@@ -21439,30 +21399,29 @@ function mountFoundryEditor(props) {
 	const host = document.createElement("div");
 	host.dataset.reactUi = "";
 	document.body.append(host);
-	const root = (0, import_client$7.createRoot)(host);
+	const root = (0, import_client$8.createRoot)(host);
 	const close = () => {
 		root.unmount();
 		host.remove();
 	};
-	root.render(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(FoundryEditor, {
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(FoundryEditor, {
 		...props,
 		onClose: close
 	}));
 	return close;
 }
-var import_react$6, import_jsx_runtime$8;
+var import_react$7, import_jsx_runtime$9;
 var init_foundry_editor = __esmMin((() => {
-	import_react$6 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_ui();
-	import_jsx_runtime$8 = require_jsx_runtime();
+	import_jsx_runtime$9 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/provider-create.tsx
+// crates/gateway-api/admin-ui/src/react/provider-create.tsx
 function ProviderCreate({ onSave, onClose, restoreFocus }) {
-	const [provider, setProvider] = (0, import_react$5.useState)("litellm");
-	const [headerMode, setHeaderMode] = (0, import_react$5.useState)("authorization_bearer");
-	const [busy, setBusy] = (0, import_react$5.useState)(false);
-	const [error, setError] = (0, import_react$5.useState)("");
+	const [provider, setProvider] = (0, import_react$6.useState)("litellm");
+	const [headerMode, setHeaderMode] = (0, import_react$6.useState)("authorization_bearer");
+	const [busy, setBusy] = (0, import_react$6.useState)(false);
+	const [error, setError] = (0, import_react$6.useState)("");
 	const foundry = provider === "azure-foundry";
 	const submit = async (event) => {
 		event.preventDefault();
@@ -21500,7 +21459,7 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 			setBusy(false);
 		}
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Dialog, {
+	return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Dialog, {
 		layout: "drawer",
 		title: "Create provider",
 		description: "Choose a provider and configure its upstream connection.",
@@ -21508,120 +21467,120 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 		onClose: () => {
 			if (!busy) onClose();
 		},
-		children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("form", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("form", {
 			onSubmit: submit,
 			className: "grid gap-4",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("fieldset", {
+				/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("fieldset", {
 					disabled: busy,
 					className: "grid min-w-0 gap-4",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
 							className: "editor-section-heading",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("i", {
 								className: "ti ti-server-2",
 								"aria-hidden": "true"
 							}), "Upstream connection"]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 							label: "Provider",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(NativeSelect, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
 								value: provider,
 								onChange: (event) => {
 									setProvider(event.target.value);
 									setError("");
 								},
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+									/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 										value: "litellm",
 										children: "LiteLLM"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+									/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 										value: "internal-service",
 										children: "Internal service"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+									/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 										value: "azure-foundry",
 										children: "Azure Foundry"
 									})
 								]
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 							label: "Name",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Input, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
 								name: "name",
 								required: true,
 								placeholder: foundry ? "Production Foundry" : "Production gateway"
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 							label: foundry ? "Project endpoint" : "Endpoint",
 							help: foundry ? "Copy the project endpoint from Foundry: https://ACCOUNT.services.ai.azure.com/api/projects/PROJECT. Use the project URL, not an agent or deployment URL." : "The upstream base URL reachable from the gateway.",
-							children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Input, {
+							children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
 								name: "base_url",
 								required: true,
 								type: "url",
 								placeholder: foundry ? "https://account.services.ai.azure.com/api/projects/project" : "http://litellm:4000"
 							})
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("label", {
+						/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("label", {
 							className: "flex items-center gap-2 text-xs text-muted-foreground",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("input", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("input", {
 								name: "enabled",
 								type: "checkbox",
 								defaultChecked: true
 							}), "Enabled"]
 						}),
-						foundry ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(FoundryIdentityFields, {}) : /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						foundry ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(FoundryIdentityFields, {}) : /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
 							className: "grid gap-4",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
 									className: "editor-section-heading",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("i", {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("i", {
 										className: "ti ti-key",
 										"aria-hidden": "true"
 									}), "Credential routing"]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+								/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 									label: "Default credential (optional)",
 									help: "Write-only upstream credential. Leave blank if this provider does not require a shared credential.",
-									children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Input, {
+									children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
 										name: "credential",
 										type: "password",
 										autoComplete: "new-password"
 									})
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+								/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 									label: "Credential mode",
-									children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(NativeSelect, {
+									children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
 										value: headerMode,
 										onChange: (event) => setHeaderMode(event.target.value),
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+										children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 											value: "authorization_bearer",
 											children: "Authorization bearer"
-										}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+										}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 											value: "custom_header",
 											children: "Custom header"
 										})]
 									})
 								}),
-								headerMode === "custom_header" && /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(import_jsx_runtime$7.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+								headerMode === "custom_header" && /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 									label: "Custom header",
-									children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Input, {
+									children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Input, {
 										name: "credential_header_name",
 										required: true,
 										placeholder: "x-litellm-api-key"
 									})
-								}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Field, {
+								}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Field, {
 									label: "Header value",
 									help: "Use raw for headers like x-litellm-api-key: credential. Use bearer when the upstream expects Bearer before the credential.",
-									children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(NativeSelect, {
+									children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(NativeSelect, {
 										name: "credential_header_value_format",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+										children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 											value: "raw",
 											children: "Raw credential"
-										}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("option", {
+										}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("option", {
 											value: "bearer",
 											children: "Bearer credential"
 										})]
@@ -21631,19 +21590,19 @@ function ProviderCreate({ onSave, onClose, restoreFocus }) {
 						}, provider)
 					]
 				}),
-				error && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
+				error && /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", {
 					role: "alert",
 					className: "text-xs text-destructive",
 					children: error
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
 					className: "editor-form-actions",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
 						type: "submit",
 						variant: "default",
 						disabled: busy,
 						children: busy ? "Creating…" : "Create provider"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Button, {
 						disabled: busy,
 						onClick: onClose,
 						children: "Cancel"
@@ -21657,31 +21616,30 @@ function mountProviderCreate(props) {
 	const host = document.createElement("div");
 	host.dataset.reactUi = "";
 	document.body.append(host);
-	const root = (0, import_client$6.createRoot)(host);
+	const root = (0, import_client$7.createRoot)(host);
 	const close = () => {
 		root.unmount();
 		host.remove();
 	};
-	root.render(/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(ProviderCreate, {
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(ProviderCreate, {
 		...props,
 		onClose: close
 	}));
 	return close;
 }
-var import_react$5, import_client$6, import_jsx_runtime$7;
+var import_react$6, import_client$7, import_jsx_runtime$8;
 var init_provider_create = __esmMin((() => {
-	import_react$5 = /* @__PURE__ */ __toESM(require_react(), 1);
-	import_client$6 = require_client();
+	import_react$6 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_client$7 = require_client();
 	init_ui();
 	init_foundry_editor();
-	import_jsx_runtime$7 = require_jsx_runtime();
+	import_jsx_runtime$8 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/foundry-check.tsx
+// crates/gateway-api/admin-ui/src/react/foundry-check.tsx
 function FoundryCheck({ name, onCheck, onClose, restoreFocus }) {
-	const [busy, setBusy] = (0, import_react$4.useState)(false);
-	const [result, setResult] = (0, import_react$4.useState)(null);
-	const [error, setError] = (0, import_react$4.useState)("");
+	const [busy, setBusy] = (0, import_react$5.useState)(false);
+	const [result, setResult] = (0, import_react$5.useState)(null);
+	const [error, setError] = (0, import_react$5.useState)("");
 	const check = async () => {
 		setBusy(true);
 		setResult(null);
@@ -21694,71 +21652,71 @@ function FoundryCheck({ name, onCheck, onClose, restoreFocus }) {
 			setBusy(false);
 		}
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Dialog, {
+	return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Dialog, {
 		title: "Verify Foundry connection",
 		description: name,
 		restoreFocus,
 		onClose: () => {
 			if (!busy) onClose();
 		},
-		children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 			className: "grid gap-4",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
 					className: "text-sm text-muted-foreground",
 					children: "Checks the saved Azure identity and project read access from this gateway instance. No agent is run. Save configuration changes before checking."
 				}),
-				busy && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
+				busy && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
 					role: "status",
 					className: "text-sm",
 					children: "Checking Azure identity and Foundry access…"
 				}),
-				error && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
+				error && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
 					role: "alert",
 					className: "text-sm text-destructive",
 					children: error
 				}),
-				result && /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
+				result && /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 					role: "status",
 					className: "grid gap-4",
 					children: [
-						[["Azure identity", result.identity], ["Foundry project read access", result.project]].map(([title, step]) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("section", {
+						[["Azure identity", result.identity], ["Foundry project read access", result.project]].map(([title, step]) => /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("section", {
 							className: "grid gap-1 border-b border-border pb-3",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 								className: "flex items-center justify-between gap-3 text-sm",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("span", { children: title }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("span", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", { children: title }), /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("span", {
 									className: step.status === "failed" ? "text-destructive" : "text-muted-foreground",
 									children: [labels[step.status], step.http_status !== null && ` · HTTP ${step.http_status}`]
 								})]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
 								className: "text-xs text-muted-foreground",
 								children: step.message
 							})]
 						}, title)),
-						/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("p", {
 							className: "text-xs text-muted-foreground",
 							children: "Agent execution, tools and other gateway instances are not verified by this check."
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 							className: "text-xs text-muted-foreground break-all",
 							children: [
 								"Checked ",
 								new Date(result.checked_at).toLocaleString(),
-								/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("br", {}),
+								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("br", {}),
 								"Gateway instance: ",
 								result.instance_id
 							]
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 					className: "flex gap-2 border-t border-border pt-4",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Button, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
 						variant: "default",
 						disabled: busy,
 						onClick: check,
 						children: busy ? "Checking…" : result || error ? "Check again" : "Check connection"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Button, {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Button, {
 						disabled: busy,
 						onClick: onClose,
 						children: "Close"
@@ -21772,23 +21730,23 @@ function mountFoundryCheck(props) {
 	const host = document.createElement("div");
 	host.dataset.reactUi = "";
 	document.body.append(host);
-	const root = (0, import_client$5.createRoot)(host);
+	const root = (0, import_client$6.createRoot)(host);
 	const close = () => {
 		root.unmount();
 		host.remove();
 	};
-	root.render(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(FoundryCheck, {
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(FoundryCheck, {
 		...props,
 		onClose: close
 	}));
 	return close;
 }
-var import_react$4, import_client$5, import_jsx_runtime$6, labels;
+var import_react$5, import_client$6, import_jsx_runtime$7, labels;
 var init_foundry_check = __esmMin((() => {
-	import_react$4 = /* @__PURE__ */ __toESM(require_react(), 1);
-	import_client$5 = require_client();
+	import_react$5 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_client$6 = require_client();
 	init_ui();
-	import_jsx_runtime$6 = require_jsx_runtime();
+	import_jsx_runtime$7 = require_jsx_runtime();
 	labels = {
 		passed: "Verified",
 		failed: "Failed",
@@ -21796,8 +21754,7 @@ var init_foundry_check = __esmMin((() => {
 		skipped: "Not checked"
 	};
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/route-configuration.tsx
+// crates/gateway-api/admin-ui/src/react/route-configuration.tsx
 function mountRouteConfiguration(form, openDrawer) {
 	const route = form.closest("tr")?.querySelector("code")?.textContent || form.dataset.routeId || form.dataset.serviceName || "Route";
 	const mode = form.querySelector("[name=\"mode\"]")?.selectedOptions[0]?.textContent;
@@ -21807,13 +21764,13 @@ function mountRouteConfiguration(form, openDrawer) {
 	host.dataset.reactUi = "";
 	form.before(host, placeholder);
 	placeholder.append(form);
-	const root = (0, import_client$4.createRoot)(host);
-	root.render(/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
+	const root = (0, import_client$5.createRoot)(host);
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 		className: mode ? "grid grid-cols-[1fr_auto] items-center gap-3" : "flex items-center",
-		children: [mode && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("span", {
+		children: [mode && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("span", {
 			className: "whitespace-nowrap text-xs text-muted-foreground",
 			children: mode.replaceAll("_", " ")
-		}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Button, {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Button, {
 			size: "sm",
 			"aria-label": `Configure ${route}`,
 			onClick: (event) => openDrawer(`Configure ${route}`, form, () => placeholder.append(form), event.currentTarget),
@@ -21835,21 +21792,20 @@ function mountRouteConfiguration(form, openDrawer) {
 		root.unmount();
 	};
 }
-var import_client$4, import_jsx_runtime$5;
+var import_client$5, import_jsx_runtime$6;
 var init_route_configuration = __esmMin((() => {
-	import_client$4 = require_client();
+	import_client$5 = require_client();
 	init_ui();
-	import_jsx_runtime$5 = require_jsx_runtime();
+	import_jsx_runtime$6 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/key-route-bindings.tsx
+// crates/gateway-api/admin-ui/src/react/key-route-bindings.tsx
 function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, trigger }) {
-	const [entries, setEntries] = (0, import_react$3.useState)(initial);
-	const [drafts, setDrafts] = (0, import_react$3.useState)({});
-	const [query, setQuery] = (0, import_react$3.useState)("");
-	const [pending, setPending] = (0, import_react$3.useState)(null);
-	const [feedback, setFeedback] = (0, import_react$3.useState)({});
-	const [discard, setDiscard] = (0, import_react$3.useState)(false);
+	const [entries, setEntries] = (0, import_react$4.useState)(initial);
+	const [drafts, setDrafts] = (0, import_react$4.useState)({});
+	const [query, setQuery] = (0, import_react$4.useState)("");
+	const [pending, setPending] = (0, import_react$4.useState)(null);
+	const [feedback, setFeedback] = (0, import_react$4.useState)({});
+	const [discard, setDiscard] = (0, import_react$4.useState)(false);
 	const dirty = entries.some((entry) => (drafts[entry.route] ?? assignment(entry, keyId)) !== assignment(entry, keyId));
 	const profiled = entries.filter((entry) => entry.access?.authentication_profiles);
 	const inherited = entries.filter((entry) => !entry.access?.authentication_profiles);
@@ -21903,59 +21859,59 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 			setPending(null);
 		}
 	}
-	return /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Dialog, {
+	return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Dialog, {
 		title: "Route assignments",
 		description: keyName,
 		onClose: close,
 		restoreFocus: trigger,
-		footer: discard ? /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+		footer: discard ? /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "grid gap-3",
 			role: "alert",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 				className: "text-xs",
 				children: "Discard unsaved selections? Assignments already saved will stay in effect."
-			}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 				className: "flex gap-2",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Button, {
 					onClick: () => setDiscard(false),
 					children: "Keep editing"
-				}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Button, {
 					variant: "destructive",
 					onClick: onClose,
 					children: "Discard changes"
 				})]
 			})]
-		}) : /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+		}) : /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "flex w-full items-center justify-between gap-3",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 				className: "text-xs text-muted-foreground",
 				children: pending ? "Saving assignment. Please wait." : dirty ? "Unsaved selections" : "Each Save applies immediately to that route."
-			}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Button, {
 				disabled: Boolean(pending),
 				onClick: close,
 				children: "Done"
 			})]
 		}),
-		children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "grid gap-4",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 					className: "text-xs text-muted-foreground",
 					children: "Choose one profile per route for this key. Unassigned or disabled profiles deny access. Key permissions and other policies still apply."
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Field, {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Field, {
 					label: "Find a route",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Input, {
 						type: "search",
 						value: query,
 						onChange: (event) => setQuery(event.target.value),
 						placeholder: "Search route path"
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("section", {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("section", {
 					"aria-label": "Routes using profiles",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("h4", {
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("h4", {
 							className: "text-xs font-medium text-muted-foreground",
 							children: [
 								"Routes using profiles (",
@@ -21968,26 +21924,26 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 							const profile = entry.access.authentication_profiles.profiles.find((item) => item.id === selected);
 							const changed = selected !== assignment(entry, keyId);
 							const result = feedback[entry.route];
-							return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+							return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 								className: "binding-route",
 								role: "group",
 								"aria-label": entry.route,
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+									/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 										className: "flex flex-wrap items-center justify-between gap-2",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("span", {
+										children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("span", {
 											className: "break-all font-mono text-xs",
 											children: entry.route
-										}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("span", {
+										}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("span", {
 											className: "text-xs text-muted-foreground",
 											children: changed ? "Unsaved" : !profile ? "Unassigned" : profile.enabled ? "Assigned" : "Profile disabled"
 										})]
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+									/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 										className: "binding-controls",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Field, {
+										children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Field, {
 											label: "Authentication profile",
-											children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(NativeSelect, {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(NativeSelect, {
 												className: "w-full min-w-0",
 												disabled: Boolean(pending),
 												value: selected,
@@ -22005,25 +21961,25 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 													}));
 													setDiscard(false);
 												},
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("option", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("option", {
 													value: "",
 													children: "Unassigned — deny access"
-												}), entry.access.authentication_profiles.profiles.map((item) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("option", {
+												}), entry.access.authentication_profiles.profiles.map((item) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("option", {
 													value: item.id,
 													children: [item.name, item.enabled ? "" : " (disabled)"]
 												}, item.id))]
 											})
-										}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
+										}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Button, {
 											disabled: Boolean(pending) || !changed,
 											onClick: () => void saveRoute(entry, selected),
 											children: pending === entry.route ? "Saving…" : "Save"
 										})]
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("p", {
+									/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("p", {
 										className: "text-xs text-muted-foreground",
 										children: [changed && "After saving: ", !profile ? "This key cannot call this route." : !profile.enabled ? "This profile is disabled. Assigned keys cannot call this route." : profile.type === "relayna_key_only" ? "Requires this Relayna key only." : "Requires this Relayna key and a verified Entra identity."]
 									}),
-									result?.text && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+									result?.text && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 										role: result.error ? "alert" : "status",
 										className: `text-xs ${result.error ? "text-destructive" : "text-muted-foreground"}`,
 										children: result.text
@@ -22031,16 +21987,16 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 								]
 							}, entry.route);
 						}),
-						!profiled.filter(matches).length && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+						!profiled.filter(matches).length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 							className: "py-4 text-xs text-muted-foreground",
 							children: profiled.length ? "No profile routes match your search." : "No routes use profiles yet. Configure authentication profiles in Routes before assigning this key."
 						})
 					]
 				}),
-				inherited.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("details", {
+				inherited.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("details", {
 					className: "border-t border-border pt-3",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("summary", {
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("summary", {
 							className: "cursor-pointer text-xs text-muted-foreground",
 							children: [
 								"Routes using existing settings (",
@@ -22048,24 +22004,24 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 								")"
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 							className: "my-3 text-xs text-muted-foreground",
 							children: "No profile assignment is needed here. Each route’s existing authentication and access rules apply."
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("ul", {
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("ul", {
 							className: "grid gap-2",
-							children: inherited.filter(matches).map((entry) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("li", {
+							children: inherited.filter(matches).map((entry) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("li", {
 								className: "break-all font-mono text-xs",
 								children: entry.route
 							}, entry.route))
 						}),
-						!inherited.filter(matches).length && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+						!inherited.filter(matches).length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 							className: "text-xs text-muted-foreground",
 							children: "No routes match your search."
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("p", {
 					className: "text-xs text-muted-foreground",
 					children: "Assignments include each route’s aliases."
 				})
@@ -22076,45 +22032,44 @@ function KeyRouteBindings({ keyId, keyName, entries: initial, save, onClose, tri
 function mountKeyRouteBindings(props) {
 	const host = document.createElement("div");
 	document.body.append(host);
-	const root = (0, import_client$3.createRoot)(host);
+	const root = (0, import_client$4.createRoot)(host);
 	const close = () => {
 		root.unmount();
 		host.remove();
 	};
-	root.render(/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(KeyRouteBindings, {
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(KeyRouteBindings, {
 		...props,
 		onClose: close
 	}));
 	return close;
 }
-var import_react$3, import_client$3, import_jsx_runtime$4, assignment;
+var import_react$4, import_client$4, import_jsx_runtime$5, assignment;
 var init_key_route_bindings = __esmMin((() => {
-	import_react$3 = /* @__PURE__ */ __toESM(require_react(), 1);
-	import_client$3 = require_client();
+	import_react$4 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_client$4 = require_client();
 	init_ui();
-	import_jsx_runtime$4 = require_jsx_runtime();
+	import_jsx_runtime$5 = require_jsx_runtime();
 	assignment = (entry, keyId) => entry.access?.authentication_profiles?.bindings.find((binding) => binding.key_id === keyId)?.profile_id || "";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/key-picker.tsx
+// crates/gateway-api/admin-ui/src/react/key-picker.tsx
 function matchingKeys(catalog, query, selected, unavailable) {
 	const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 	if (!terms.length) return [];
 	return catalog.eligible.filter((key) => !selected.includes(key.id) && !unavailable.has(key.id) && terms.every((term) => key.searchable.includes(term)));
 }
 function KeyPicker({ initial, load, elsewhere, onApply, onClose, restoreFocus }) {
-	const [query, setQuery] = (0, import_react$2.useState)("");
-	const [selected, setSelected] = (0, import_react$2.useState)(initial);
-	const [catalog, setCatalog] = (0, import_react$2.useState)({
+	const [query, setQuery] = (0, import_react$3.useState)("");
+	const [selected, setSelected] = (0, import_react$3.useState)(initial);
+	const [catalog, setCatalog] = (0, import_react$3.useState)({
 		all: [],
 		eligible: []
 	});
-	const [loading, setLoading] = (0, import_react$2.useState)(true);
-	const [failed, setFailed] = (0, import_react$2.useState)(false);
-	const [attempt, setAttempt] = (0, import_react$2.useState)(0);
-	const [showConflicts, setShowConflicts] = (0, import_react$2.useState)(false);
-	const input = (0, import_react$2.useRef)(null);
-	(0, import_react$2.useEffect)(() => {
+	const [loading, setLoading] = (0, import_react$3.useState)(true);
+	const [failed, setFailed] = (0, import_react$3.useState)(false);
+	const [attempt, setAttempt] = (0, import_react$3.useState)(0);
+	const [showConflicts, setShowConflicts] = (0, import_react$3.useState)(false);
+	const input = (0, import_react$3.useRef)(null);
+	(0, import_react$3.useEffect)(() => {
 		let active = true;
 		setLoading(true);
 		setFailed(false);
@@ -22158,28 +22113,28 @@ function KeyPicker({ initial, load, elsewhere, onApply, onClose, restoreFocus })
 		onApply(selected);
 		onClose();
 	};
-	return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Dialog, {
+	return /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Dialog, {
 		initialFocus: input,
 		title: "Select keys",
 		onClose,
 		restoreFocus,
-		footer: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(import_jsx_runtime$3.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
+		footer: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(import_jsx_runtime$4.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
 			variant: "default",
 			onClick: apply,
 			disabled: loading || failed,
 			children: "Apply selection"
-		}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
 			onClick: onClose,
 			children: "Cancel"
 		})] }),
-		children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+		children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
 			"data-react-ui": true,
 			className: "grid gap-4",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Field, {
 					label: "Search keys",
 					help: "Search by key name or prefix, UUID, project or service. Keys assigned to another profile on this route are excluded.",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Input, {
 						ref: input,
 						type: "search",
 						value: query,
@@ -22193,36 +22148,36 @@ function KeyPicker({ initial, load, elsewhere, onApply, onClose, restoreFocus })
 						autoComplete: "off"
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("div", {
 					role: "status",
 					className: "text-xs text-muted-foreground",
 					children: loading ? "Loading keys…" : failed ? "Could not load keys. Your selections are kept. Choose Retry loading keys to try again." : !query.trim() ? "Type to search keys." : available.length ? `${available.length} matching keys${available.length > 30 ? " · showing the first 30; refine your search" : ""}.` : "No available keys match your search. Try a different name or UUID. Keys already selected, assigned to another profile, or outside this route’s project are excluded."
 				}),
-				failed && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
+				failed && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
 					onClick: () => setAttempt((value) => value + 1),
 					children: "Retry loading keys"
 				}),
-				!loading && !failed && available.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("ul", {
+				!loading && !failed && available.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("ul", {
 					"aria-label": "Search results",
 					className: "max-h-64 overflow-y-auto divide-y divide-border",
-					children: available.slice(0, 30).map((key) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(KeyRow, {
+					children: available.slice(0, 30).map((key) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(KeyRow, {
 						item: key,
 						action: "Add",
 						onClick: () => choose(key.id)
 					}, key.id))
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("section", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("section", {
 					"aria-label": "Selected keys",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("h4", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("h4", {
 						className: "mb-2 text-xs font-medium text-muted-foreground",
 						children: [
 							"Selected keys (",
 							selected.length,
 							")"
 						]
-					}), selected.length ? /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("ul", {
+					}), selected.length ? /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("ul", {
 						className: "divide-y divide-border",
-						children: selected.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(KeyRow, {
+						children: selected.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(KeyRow, {
 							item: catalog.all.find((key) => key.id === id) || {
 								id,
 								name: "Key details unavailable",
@@ -22233,20 +22188,20 @@ function KeyPicker({ initial, load, elsewhere, onApply, onClose, restoreFocus })
 							action: "Remove",
 							onClick: () => remove(id)
 						}, id))
-					}) : /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
+					}) : /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
 						className: "text-xs text-muted-foreground",
 						children: "No keys selected."
 					})]
 				}),
-				conflict.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+				conflict.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
 					role: "alert",
 					className: "text-xs text-destructive",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", { children: "Selection was not applied:" }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("ul", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", { children: "Selection was not applied:" }), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("ul", {
 						className: "mt-1 list-disc pl-4",
-						children: conflict.map((message) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("li", { children: message }, message))
+						children: conflict.map((message) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("li", { children: message }, message))
 					})]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("p", {
 					className: "text-xs text-muted-foreground",
 					children: "Apply updates this profile’s draft. Save identity to save the assignments."
 				})
@@ -22255,16 +22210,16 @@ function KeyPicker({ initial, load, elsewhere, onApply, onClose, restoreFocus })
 	});
 }
 function KeyRow({ item, action, onClick }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("li", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("li", {
 		className: "flex items-center justify-between gap-4 py-3",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+		children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
 			className: "min-w-0",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("span", {
 					className: "block break-all text-[13px] font-normal text-foreground",
 					children: item.name
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("span", {
 					className: "block text-xs text-muted-foreground",
 					children: [
 						item.owner,
@@ -22272,12 +22227,12 @@ function KeyRow({ item, action, onClick }) {
 						item.status
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("code", {
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("code", {
 					className: "block break-all text-[11px] text-muted-foreground",
 					children: item.id
 				})
 			]
-		}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Button, {
 			size: "sm",
 			onClick,
 			"aria-label": `${action} ${item.name} (${item.id})`,
@@ -22285,44 +22240,43 @@ function KeyRow({ item, action, onClick }) {
 		})]
 	});
 }
-var import_react$2, import_jsx_runtime$3;
+var import_react$3, import_jsx_runtime$4;
 var init_key_picker = __esmMin((() => {
-	import_react$2 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$3 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_ui();
-	import_jsx_runtime$3 = require_jsx_runtime();
+	import_jsx_runtime$4 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/identity-editor.tsx
+// crates/gateway-api/admin-ui/src/react/identity-editor.tsx
 function IdentityEditor({ initial, loadCatalog, onDirty }) {
-	const [draft, setDraft] = (0, import_react$1.useState)(initial);
+	const [draft, setDraft] = (0, import_react$2.useState)(initial);
 	const savedProfiles = initial.mode === "profiles" && initial.revision > 0;
-	const [catalog, setCatalog] = (0, import_react$1.useState)({
+	const [catalog, setCatalog] = (0, import_react$2.useState)({
 		all: [],
 		eligible: []
 	});
-	const [picker, setPicker] = (0, import_react$1.useState)(null);
-	const [notice, setNotice] = (0, import_react$1.useState)("");
-	const [removed, setRemoved] = (0, import_react$1.useState)(null);
-	const host = (0, import_react$1.useRef)(null);
-	const noticeElement = (0, import_react$1.useRef)(null);
-	(0, import_react$1.useEffect)(() => {
+	const [picker, setPicker] = (0, import_react$2.useState)(null);
+	const [notice, setNotice] = (0, import_react$2.useState)("");
+	const [removed, setRemoved] = (0, import_react$2.useState)(null);
+	const host = (0, import_react$2.useRef)(null);
+	const noticeElement = (0, import_react$2.useRef)(null);
+	(0, import_react$2.useEffect)(() => {
 		if (notice) {
 			noticeElement.current.focus();
 			noticeElement.current.scrollIntoView({ block: "nearest" });
 		}
 	}, [notice]);
-	const undoButton = (0, import_react$1.useRef)(null);
-	(0, import_react$1.useEffect)(() => {
+	const undoButton = (0, import_react$2.useRef)(null);
+	(0, import_react$2.useEffect)(() => {
 		if (removed) undoButton.current.focus();
 	}, [removed]);
-	const pendingFocus = (0, import_react$1.useRef)(null);
-	(0, import_react$1.useEffect)(() => {
+	const pendingFocus = (0, import_react$2.useRef)(null);
+	(0, import_react$2.useEffect)(() => {
 		if (pendingFocus.current) {
 			host.current.querySelector(`[name="${CSS.escape(pendingFocus.current)}.id"]`).focus();
 			pendingFocus.current = null;
 		}
 	}, [draft.profiles]);
-	(0, import_react$1.useEffect)(() => {
+	(0, import_react$2.useEffect)(() => {
 		const node = host.current;
 		const show = (event) => setNotice(event.detail);
 		const preset = (event) => {
@@ -22342,9 +22296,9 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 			node.removeEventListener("identity-preset", preset);
 		};
 	}, [savedProfiles]);
-	const unique = (0, import_react$1.useId)();
-	const [sequence, setSequence] = (0, import_react$1.useState)(0);
-	(0, import_react$1.useEffect)(() => {
+	const unique = (0, import_react$2.useId)();
+	const [sequence, setSequence] = (0, import_react$2.useState)(0);
+	(0, import_react$2.useEffect)(() => {
 		let active = true;
 		loadCatalog().then((value) => {
 			if (active) setCatalog(value);
@@ -22403,20 +22357,20 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 		setRemoved(null);
 	};
 	const current = draft.profiles.find((profile) => profile.slot === picker?.slot);
-	return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 		ref: host,
 		"data-react-ui": true,
 		className: "grid gap-5 w-full",
 		children: [
-			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 				type: "hidden",
 				name: "profiles_saved",
 				value: "true"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 				label: "Route authentication mode",
 				help: help$1.mode,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(NativeSelect, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(NativeSelect, {
 					name: "endpoint_entra_mode",
 					value: draft.mode,
 					"aria-describedby": savedProfiles ? `${unique}-mode-restriction` : void 0,
@@ -22427,21 +22381,21 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 						});
 					},
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 							value: "profiles",
 							children: "Use authentication profiles"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 							value: "inherit",
 							disabled: savedProfiles,
 							children: "Use existing gateway setting"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 							value: "required",
 							disabled: savedProfiles,
 							children: "Require Entra"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 							value: "disabled",
 							disabled: savedProfiles,
 							children: "No Entra"
@@ -22449,15 +22403,15 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 					]
 				})
 			}),
-			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+			savedProfiles && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 				id: `${unique}-mode-restriction`,
 				className: "-mt-3 text-xs text-muted-foreground",
 				children: "Saved profiles keep this route in profile mode. To use Relayna key only, change Profile authentication below."
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
 				"data-endpoint-entra": true,
 				hidden: draft.mode !== "required",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(EntraFields, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(EntraFields, {
 					value: draft.entra,
 					prefix: "endpoint",
 					active: draft.mode === "required",
@@ -22467,88 +22421,88 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 					})
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("section", {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("section", {
 				"data-profile-editor": true,
 				hidden: draft.mode !== "profiles",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 						className: "mb-2 flex items-center justify-between gap-4",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("h4", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("h4", {
 							className: "text-sm font-medium",
 							children: "Authentication profiles"
-						}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Button, {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 							"data-add-profile": true,
 							onClick: add,
 							disabled: draft.mode !== "profiles" || draft.profiles.length >= 32,
 							children: "Add profile"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 						className: "mb-4 text-xs text-muted-foreground",
 						children: "A profile can have multiple keys. Each key belongs to one profile per route. Unassigned keys are denied."
 					}),
-					draft.profiles.length >= 32 && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+					draft.profiles.length >= 32 && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 						className: "mb-4 text-xs text-muted-foreground",
 						children: "32 profiles is the limit. Remove an unused profile before adding another."
 					}),
-					removed && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					removed && /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 						role: "status",
 						className: "mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("span", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("span", { children: [
 								"“",
 								removed.profile.name || "New authentication profile",
 								"” removed from this draft. Save identity to apply."
 							] }),
-							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Button, {
+							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 								ref: undoButton,
 								size: "sm",
 								onClick: undoRemove,
 								disabled: draft.profiles.length >= 32,
 								children: "Undo removal"
 							}),
-							draft.profiles.length >= 32 && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("span", { children: "32-profile limit reached. Cancel to discard all draft changes." })
+							draft.profiles.length >= 32 && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("span", { children: "32-profile limit reached. Cancel to discard all draft changes." })
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 						type: "hidden",
 						name: "profiles_revision",
 						value: draft.revision,
 						disabled: draft.mode !== "profiles"
 					}),
-					!draft.profiles.length && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+					!draft.profiles.length && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 						className: "rounded-md border border-dashed border-border p-4 text-xs text-muted-foreground",
 						children: "No authentication profiles. Use Add profile to configure who can access this route. At least one profile is needed before saving."
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
 						"data-profile-rows": true,
 						className: "grid gap-4",
-						children: draft.profiles.map((profile) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("fieldset", {
+						children: draft.profiles.map((profile) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("fieldset", {
 							"data-profile-row": true,
 							className: "rounded-lg border border-border p-4",
 							disabled: draft.mode !== "profiles",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("legend", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("legend", {
 									className: "px-1.5 text-xs font-medium",
 									children: profile.name || "New authentication profile"
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 									type: "hidden",
 									name: "profile_slot",
 									value: profile.slot
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 									type: "hidden",
 									name: `${profile.slot}.original_id`,
 									value: initial.profiles.find((saved) => saved.slot === profile.slot)?.id || ""
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 									className: "grid gap-4 sm:grid-cols-2",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 											label: "Stable profile ID (optional)",
 											help: help$1.id,
-											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 												name: `${profile.slot}.id`,
 												value: profile.id,
 												onChange: (event) => patch(profile.slot, { id: event.target.value }),
@@ -22557,10 +22511,10 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 												placeholder: "Generated from profile name on save"
 											})
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 											label: "Profile name (required)",
 											help: help$1.name,
-											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 												name: `${profile.slot}.name`,
 												value: profile.name,
 												onChange: (event) => patch(profile.slot, { name: event.target.value }),
@@ -22569,24 +22523,24 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 												placeholder: "Internal automation"
 											})
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 											label: "Profile authentication",
 											help: help$1.type,
-											children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(NativeSelect, {
+											children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(NativeSelect, {
 												"data-profile-type": true,
 												name: `${profile.slot}.type`,
 												value: profile.type,
 												onChange: (event) => patch(profile.slot, { type: event.target.value }),
-												children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 													value: "entra_and_relayna_key",
 													children: "Entra + Relayna key"
-												}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("option", {
+												}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("option", {
 													value: "relayna_key_only",
 													children: "Relayna key only"
 												})]
 											})
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(CheckboxField, {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CheckboxField, {
 											label: "Enabled",
 											help: help$1.enabled,
 											name: `${profile.slot}.enabled`,
@@ -22595,39 +22549,39 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
 									"data-profile-entra": true,
 									className: "mt-4",
 									hidden: profile.type !== "entra_and_relayna_key",
-									children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(EntraFields, {
+									children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(EntraFields, {
 										value: profile.entra,
 										prefix: profile.slot,
 										active: draft.mode === "profiles" && profile.type === "entra_and_relayna_key",
 										onChange: (entra) => patch(profile.slot, { entra })
 									})
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 									"data-profile-key-only": true,
 									hidden: profile.type !== "relayna_key_only",
 									className: "mt-4 text-xs text-muted-foreground",
 									children: "Uses the assigned Relayna key. No Entra audience or claims are required."
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("section", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("section", {
 									className: "mt-4",
 									"data-key-picker": true,
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 											"data-profile-keys": true,
 											type: "hidden",
 											name: `${profile.slot}.keys`,
 											value: profile.keys.join(",")
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 											className: "flex items-center justify-between gap-3",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("span", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("span", {
 												className: "text-xs font-medium text-muted-foreground",
 												children: "Assigned keys"
-											}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Button, {
+											}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 												"data-open-keys": true,
 												"aria-haspopup": "dialog",
 												onClick: (event) => setPicker({
@@ -22637,51 +22591,51 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 												children: "Select keys"
 											})]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
 											"data-selected-keys": true,
 											children: profile.keys.length ? profile.keys.map((id) => {
 												const key = catalog.all.find((item) => item.id === id);
-												return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+												return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 													className: "flex items-center justify-between gap-3 border-b border-border py-3",
-													children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+													children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 														className: "min-w-0",
 														children: [
-															/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("span", {
+															/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("span", {
 																className: "block text-[13px]",
 																children: key?.name || "Key details unavailable"
 															}),
-															/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("span", {
+															/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("span", {
 																className: "block text-xs text-muted-foreground",
 																children: [key?.owner || "Saved assignment", key ? ` · ${key.status}` : ""]
 															}),
-															/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("code", {
+															/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("code", {
 																className: "block break-all text-[11px] text-muted-foreground",
 																children: id
 															})
 														]
-													}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Button, {
+													}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 														size: "sm",
 														"aria-label": `Remove ${key?.name || id}`,
 														onClick: () => patch(profile.slot, { keys: profile.keys.filter((key) => key !== id) }),
 														children: "Remove"
 													})]
 												}, id);
-											}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+											}) : /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 												className: "py-3 text-xs text-muted-foreground",
 												children: "No keys assigned."
 											})
 										})
 									]
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+								/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 									className: "mt-3 grid justify-items-start gap-2",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Button, {
+									children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Button, {
 										variant: "ghost",
 										disabled: Boolean(profile.keys.length) || savedProfiles && draft.profiles.length === 1,
 										"aria-describedby": `${profile.slot}-remove-help`,
 										onClick: () => remove(profile),
 										children: "Remove profile"
-									}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+									}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 										id: `${profile.slot}-remove-help`,
 										className: "text-xs text-muted-foreground",
 										children: savedProfiles && draft.profiles.length === 1 ? "Keep at least one profile on this route. Add a replacement before removing this one. To deny access instead, turn off Enabled and save." : profile.keys.length ? `This profile has ${profile.keys.length} assigned ${profile.keys.length === 1 ? "key" : "keys"}. Remove its Assigned keys first; reassign them to another profile before saving if they still need access.` : "Removal takes effect when you Save identity. Cancel discards your changes."
@@ -22692,7 +22646,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 					})
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("p", {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("p", {
 				ref: noticeElement,
 				"data-profile-notice": true,
 				"data-react-error": true,
@@ -22701,7 +22655,7 @@ function IdentityEditor({ initial, loadCatalog, onDirty }) {
 				className: "text-xs text-destructive",
 				children: notice
 			}),
-			picker && current && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(KeyPicker, {
+			picker && current && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(KeyPicker, {
 				initial: current.keys,
 				load: loadCatalog,
 				elsewhere: () => new Set(draft.profiles.filter((profile) => profile.slot !== current.slot).flatMap((profile) => profile.keys)),
@@ -22720,14 +22674,14 @@ function EntraFields({ value, prefix, active, onChange }) {
 		allowed_groups: "groups",
 		allow_apigee: "apigee"
 	}[field]}` : `${prefix}.${field}`;
-	return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("fieldset", {
+	return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("fieldset", {
 		disabled: !active,
 		className: "grid gap-4 sm:grid-cols-2",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 				label: prefix === "endpoint" ? "Entra audience (required)" : "Profile audience (required)",
 				help: help$1.audience,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 					name: name("audience"),
 					value: value.audience,
 					onChange: (event) => onChange({
@@ -22742,14 +22696,14 @@ function EntraFields({ value, prefix, active, onChange }) {
 				"required_scopes",
 				"required_roles",
 				"allowed_groups"
-			].map((field) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Field, {
+			].map((field) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Field, {
 				label: {
 					required_scopes: "Scopes (optional)",
 					required_roles: "Roles (optional)",
 					allowed_groups: "Groups (optional)"
 				}[field],
 				help: help$1[field],
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Input, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Input, {
 					name: name(field),
 					value: value[field].join(","),
 					onChange: (event) => onChange({
@@ -22758,7 +22712,7 @@ function EntraFields({ value, prefix, active, onChange }) {
 					})
 				})
 			}, field)),
-			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(CheckboxField, {
+			/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CheckboxField, {
 				label: "Accept signed Apigee identity",
 				help: help$1.allow_apigee,
 				name: name("allow_apigee"),
@@ -22771,12 +22725,12 @@ function EntraFields({ value, prefix, active, onChange }) {
 		]
 	});
 }
-var import_react$1, import_jsx_runtime$2, blankEntra, help$1;
+var import_react$2, import_jsx_runtime$3, blankEntra, help$1;
 var init_identity_editor = __esmMin((() => {
-	import_react$1 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_react$2 = /* @__PURE__ */ __toESM(require_react(), 1);
 	init_ui();
 	init_key_picker();
-	import_jsx_runtime$2 = require_jsx_runtime();
+	import_jsx_runtime$3 = require_jsx_runtime();
 	blankEntra = () => ({
 		audience: "",
 		required_scopes: [],
@@ -22797,8 +22751,7 @@ var init_identity_editor = __esmMin((() => {
 		allow_apigee: "Accept HMAC-verified Apigee identity only with the matching audience, future expiry and required claims."
 	};
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/mount-identity-editor.tsx
+// crates/gateway-api/admin-ui/src/react/mount-identity-editor.tsx
 /** Preserve the form wire contract while giving React sole ownership of fields. */
 function readIdentityDraft(host) {
 	const value = (name) => host.querySelector(`[name="${CSS.escape(name)}"]`)?.value || "";
@@ -22839,8 +22792,8 @@ function mountIdentityEditor(host, loadCatalog) {
 	const initial = readIdentityDraft(host);
 	host.dataset.reactUi = "";
 	host.style.display = "block";
-	const root = (0, import_client$2.createRoot)(host);
-	(0, import_react_dom$2.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(IdentityEditor, {
+	const root = (0, import_client$3.createRoot)(host);
+	(0, import_react_dom$2.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IdentityEditor, {
 		initial,
 		loadCatalog,
 		onDirty: () => {
@@ -22863,15 +22816,14 @@ function mountIdentityEditor(host, loadCatalog) {
 		root.unmount();
 	};
 }
-var import_client$2, import_react_dom$2, import_jsx_runtime$1;
+var import_client$3, import_react_dom$2, import_jsx_runtime$2;
 var init_mount_identity_editor = __esmMin((() => {
-	import_client$2 = require_client();
+	import_client$3 = require_client();
 	import_react_dom$2 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_identity_editor();
-	import_jsx_runtime$1 = require_jsx_runtime();
+	import_jsx_runtime$2 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/react/user-token-forwarding.tsx
+// crates/gateway-api/admin-ui/src/react/user-token-forwarding.tsx
 function headerError(value) {
 	const name = value.trim().toLowerCase();
 	if (!name || name.length > 128 || !/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name)) return "User token header must be a valid HTTP header name, up to 128 characters.";
@@ -22915,28 +22867,28 @@ function headerError(value) {
 	return "";
 }
 function UserTokenForwarding({ initial }) {
-	const [enabled, setEnabled] = (0, import_react.useState)(initial?.enabled ?? false);
-	const [error, setError] = (0, import_react.useState)("");
-	const helpId = (0, import_react.useId)();
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+	const [enabled, setEnabled] = (0, import_react$1.useState)(initial?.enabled ?? false);
+	const [error, setError] = (0, import_react$1.useState)("");
+	const helpId = (0, import_react$1.useId)();
+	return /* @__PURE__ */ (0, import_jsx_runtime$1.jsxs)("div", {
 		className: "grid gap-3",
 		"data-react-ui": "",
 		children: [
-			initial && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+			initial && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("input", {
 				type: "hidden",
 				name: "user_token_configured",
 				value: "true"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CheckboxField, {
+			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(CheckboxField, {
 				name: "forward_user_token",
 				label: "Forward verified user token",
 				help: "Opt in only for a trusted Accessa adapter that needs the user JWT for a Keystone on-behalf-of exchange. Signed Apigee identity alone cannot be forwarded.",
 				checked: enabled,
 				onChange: (event) => setEnabled(event.target.checked)
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, {
+			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Field, {
 				label: "User token header",
-				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(Input, {
 					name: "user_token_header",
 					defaultValue: initial?.header ?? "x-access-token",
 					maxLength: 128,
@@ -22950,12 +22902,12 @@ function UserTokenForwarding({ initial }) {
 					}
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+			/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("p", {
 				id: helpId,
 				className: "help",
 				children: "Default: x-access-token. Gateway overwrites this header with the verified JWT when enabled and strips caller copies when disabled. Authentication, trusted identity and HTTP control headers are reserved. Tokens stay out of Traffic and Usage."
 			}),
-			error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+			error && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)("p", {
 				role: "alert",
 				className: "notice error",
 				children: error
@@ -22965,8 +22917,8 @@ function UserTokenForwarding({ initial }) {
 }
 function mountUserTokenForwarding(host) {
 	const initial = JSON.parse(host.dataset.userTokenForwarding || "null");
-	const root = (0, import_client$1.createRoot)(host);
-	(0, import_react_dom$1.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(UserTokenForwarding, { initial })));
+	const root = (0, import_client$2.createRoot)(host);
+	(0, import_react_dom$1.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(UserTokenForwarding, { initial })));
 	const observer = new MutationObserver(() => {
 		if (!host.isConnected) {
 			observer.disconnect();
@@ -22978,16 +22930,374 @@ function mountUserTokenForwarding(host) {
 		subtree: true
 	});
 }
-var import_react, import_client$1, import_react_dom$1, import_jsx_runtime;
+var import_react$1, import_client$2, import_react_dom$1, import_jsx_runtime$1;
 var init_user_token_forwarding = __esmMin((() => {
-	import_react = /* @__PURE__ */ __toESM(require_react(), 1);
-	import_client$1 = require_client();
+	import_react$1 = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_client$2 = require_client();
 	import_react_dom$1 = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 	init_ui();
-	import_jsx_runtime = require_jsx_runtime();
+	import_jsx_runtime$1 = require_jsx_runtime();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/auth-profiles.ts
+// crates/gateway-api/admin-ui/src/react/litellm-customer-spend.tsx
+function customerSpendDates(from, to) {
+	const end = to ? new Date(to) : /* @__PURE__ */ new Date();
+	const start = from ? new Date(from) : new Date(end);
+	if (!from) start.setUTCDate(start.getUTCDate() - 29);
+	return {
+		start_date: start.toISOString().slice(0, 10),
+		end_date: end.toISOString().slice(0, 10)
+	};
+}
+function LiteLlmCustomerSpend({ keyId, from, to, api, onExport, onCopyExport }) {
+	const titleId = (0, import_react.useId)();
+	const hintId = (0, import_react.useId)();
+	const searchHintId = (0, import_react.useId)();
+	const [dates, setDates] = (0, import_react.useState)(() => customerSpendDates(from, to));
+	const [customerId, setCustomerId] = (0, import_react.useState)("");
+	const [pageSize, setPageSize] = (0, import_react.useState)("50");
+	const [snapshot, setSnapshot] = (0, import_react.useState)(null);
+	const [busy, setBusy] = (0, import_react.useState)(false);
+	const [error, setError] = (0, import_react.useState)("");
+	const [exporting, setExporting] = (0, import_react.useState)(false);
+	const [exportMessage, setExportMessage] = (0, import_react.useState)("");
+	const controller = (0, import_react.useRef)(null);
+	const exportController = (0, import_react.useRef)(null);
+	const pages = (0, import_react.useRef)(/* @__PURE__ */ new Map());
+	(0, import_react.useEffect)(() => () => {
+		controller.current?.abort();
+		exportController.current?.abort();
+	}, []);
+	const clearResults = () => {
+		pages.current.clear();
+		setSnapshot(null);
+		setError("");
+	};
+	const changeDate = (field, value) => {
+		setDates((previous) => ({
+			...previous,
+			[field]: value
+		}));
+		clearResults();
+	};
+	const validDates = () => {
+		const days = (Date.parse(dates.end_date) - Date.parse(dates.start_date)) / 864e5 + 1;
+		if (!Number.isFinite(days) || days < 1 || days > 366) {
+			setError("Choose a start and end date covering 1–366 inclusive UTC days.");
+			return false;
+		}
+		return true;
+	};
+	const load = async (page = 1, refresh = false) => {
+		if (!validDates()) return;
+		const exactId = customerId.trim();
+		if (/[\x00-\x1f\x7f,]/.test(exactId) || new TextEncoder().encode(exactId).length > 1024) {
+			setError("Use an exact customer ID up to 1,024 bytes, without commas or control characters.");
+			return;
+		}
+		const query = new URLSearchParams({
+			...dates,
+			page: String(page),
+			page_size: pageSize
+		});
+		if (exactId) query.set("customer_id", exactId);
+		const path = `/admin-ui/admin/keys/${encodeURIComponent(keyId)}/litellm-customer-spend?${query}`;
+		if (refresh) pages.current.clear();
+		const cached = pages.current.get(path);
+		if (cached && Date.now() - cached.at < 3e4) {
+			setSnapshot(cached.snapshot);
+			setError("");
+			return;
+		}
+		const request = new AbortController();
+		controller.current?.abort();
+		controller.current = request;
+		setBusy(true);
+		setError("");
+		try {
+			const result = await api(path, { signal: request.signal });
+			if (request.signal.aborted) return;
+			setSnapshot(result);
+			if (result.status === "available") {
+				pages.current.delete(path);
+				pages.current.set(path, {
+					snapshot: result,
+					at: Date.now()
+				});
+				while (pages.current.size > 3) pages.current.delete(pages.current.keys().next().value);
+			}
+		} catch {
+			if (!request.signal.aborted) {
+				setSnapshot(null);
+				setError("Customer costs unavailable. Check the LiteLLM connection and permission to read the customer directory and aggregated daily activity, then retry.");
+			}
+		} finally {
+			if (!request.signal.aborted) setBusy(false);
+		}
+	};
+	const exportAll = async () => {
+		if (!validDates()) return;
+		const request = new AbortController();
+		exportController.current = request;
+		setExporting(true);
+		setExportMessage(`Exporting all customers for ${dates.start_date} through ${dates.end_date} (UTC)…`);
+		try {
+			await onExport({ ...dates }, request.signal);
+			if (!request.signal.aborted) setExportMessage("All-customer CSV saved.");
+		} catch (error) {
+			if (!request.signal.aborted) setExportMessage(error instanceof DOMException && error.name === "AbortError" ? "Export cancelled." : "Export failed. No completed file was saved. Retry, or use Copy export curl if this browser cannot stream files to disk.");
+		} finally {
+			if (!request.signal.aborted) setExporting(false);
+		}
+	};
+	const cancelExport = () => {
+		exportController.current?.abort();
+		setExporting(false);
+		setExportMessage("Export cancelled.");
+	};
+	const copyExport = async () => {
+		if (!validDates()) return;
+		try {
+			await onCopyExport({ ...dates });
+			setExportMessage("Export curl copied. Set GATEWAY_OPERATOR_TOKEN to a token with usage:export before running it.");
+		} catch {
+			setExportMessage("Could not copy the export command. Check clipboard permission and retry.");
+		}
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+		className: "breakdown-section",
+		"aria-labelledby": titleId,
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "panel-heading",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h4", {
+					id: titleId,
+					children: "LiteLLM customer costs"
+				})
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				id: hintId,
+				className: "help",
+				children: "Customer totals for the selected key’s LiteLLM credential, including traffic outside Gateway. Dates include whole UTC days; other Usage filters do not apply. Shared mappings include every caller using that credential. These totals are separate from Gateway estimates and budgets."
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+				id: "litellm-customer-spend-form",
+				className: "form-grid",
+				onSubmit: (event) => {
+					event.preventDefault();
+					load(1, true);
+				},
+				"aria-describedby": hintId,
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, {
+						label: "From (UTC day)",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
+							type: "date",
+							required: true,
+							value: dates.start_date,
+							disabled: busy,
+							onChange: (event) => changeDate("start_date", event.target.value)
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, {
+						label: "To (UTC day)",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
+							type: "date",
+							required: true,
+							value: dates.end_date,
+							disabled: busy,
+							onChange: (event) => changeDate("end_date", event.target.value)
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, {
+						label: "Customer ID (exact)",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Input, {
+							type: "search",
+							value: customerId,
+							disabled: busy,
+							"aria-describedby": searchHintId,
+							onChange: (event) => {
+								setCustomerId(event.target.value);
+								clearResults();
+							}
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Field, {
+						label: "Customers per page",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(NativeSelect, {
+							value: pageSize,
+							disabled: busy,
+							onChange: (event) => {
+								setPageSize(event.target.value);
+								clearResults();
+							},
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: "25",
+									children: "25"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: "50",
+									children: "50"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+									value: "100",
+									children: "100"
+								})
+							]
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						id: searchHintId,
+						className: "help wide-field",
+						children: "Leave Customer ID blank to browse registered-customer pages. Only customers with activity for the mapped credential appear; a page can be empty and still have a next page. Enter an exact ID to look it up directly."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "form-actions wide-field",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+							type: "submit",
+							disabled: busy,
+							children: busy ? "Loading customer costs…" : "Load customer costs"
+						})
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "form-actions",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+						disabled: exporting,
+						onClick: () => void exportAll(),
+						children: "Export all customers (CSV)"
+					}),
+					exporting && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+						onClick: cancelExport,
+						children: "Cancel export"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+						onClick: () => void copyExport(),
+						children: "Copy export curl"
+					})
+				]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				className: "help",
+				children: "Export includes every currently registered customer with activity for this mapped credential in the selected UTC dates. The customer-ID filter and page size do not limit it. Large exports stream to disk in supported browsers."
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+				role: "status",
+				"aria-live": "polite",
+				children: exportMessage
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				role: "status",
+				"aria-live": "polite",
+				"aria-busy": busy,
+				children: [
+					!snapshot && !busy && !error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "help",
+						children: "Load recorded customers for these dates (up to 366 days). All time defaults to the last 30 UTC days."
+					}),
+					error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: error }),
+					snapshot?.status === "not_mapped" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "No enabled LiteLLM credential mapping. Configure a key or project mapping in Providers." }),
+					snapshot?.status === "unavailable" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Customer costs unavailable. Check LiteLLM customer directory and aggregated daily activity access, try a shorter date range or smaller page, then reload." }),
+					snapshot?.status === "available" && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+							className: "help",
+							children: [
+								snapshot.mapping_scope === "project" ? "Shared project mapping" : "Key mapping",
+								" · ",
+								snapshot.start_date,
+								" through ",
+								snapshot.end_date,
+								" (UTC)",
+								snapshot.fetched_at && ` · Retrieved ${new Date(snapshot.fetched_at).toLocaleString()}`
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "help",
+							children: snapshot.customer_id ? `Exact customer ID: ${snapshot.customer_id}` : `Directory page ${snapshot.page} · ${snapshot.customers_checked} registered IDs checked · ${snapshot.customers.length} customers with activity. Costs are sorted within this page.`
+						}),
+						snapshot.customers.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "table-wrap",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("table", { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("caption", {
+									className: "sr-only",
+									children: "LiteLLM cost per customer for the mapped credential and selected UTC days"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+										scope: "col",
+										children: "Customer ID"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+										scope: "col",
+										children: "Cost (USD)"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+										scope: "col",
+										children: "Requests"
+									})
+								] }) }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("tbody", { children: snapshot.customers.map((customer) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("tr", { children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("th", {
+										scope: "row",
+										children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: customer.customer_id })
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: usd.format(customer.spend_usd) }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("td", { children: customer.requests.toLocaleString() })
+								] }, customer.customer_id)) })
+							] })
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { children: [
+							"No activity recorded for ",
+							snapshot.customer_id ? "this customer" : "the customers checked on this directory page",
+							" under the mapped credential in these UTC dates.",
+							snapshot.has_more ? " Continue to the next directory page or look up an exact customer ID." : ""
+						] }),
+						!snapshot.customer_id && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "form-actions",
+							role: "group",
+							"aria-label": "Customer directory pagination",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+								disabled: busy || snapshot.page <= 1,
+								onClick: () => void load(snapshot.page - 1),
+								children: "Previous customer page"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Button, {
+								disabled: busy || !snapshot.has_more,
+								onClick: () => void load(snapshot.page + 1),
+								children: "Next customer page"
+							})]
+						})
+					] })
+				]
+			})
+		]
+	});
+}
+function mountLiteLlmCustomerSpend(host, props) {
+	const root = (0, import_client$1.createRoot)(host);
+	root.render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LiteLlmCustomerSpend, { ...props }));
+	let closed = false;
+	return () => {
+		if (!closed) {
+			closed = true;
+			root.unmount();
+		}
+	};
+}
+var import_react, import_client$1, import_jsx_runtime, usd;
+var init_litellm_customer_spend = __esmMin((() => {
+	import_react = /* @__PURE__ */ __toESM(require_react(), 1);
+	import_client$1 = require_client();
+	init_ui();
+	import_jsx_runtime = require_jsx_runtime();
+	usd = new Intl.NumberFormat("en-US", {
+		style: "currency",
+		currency: "USD",
+		minimumFractionDigits: 4,
+		maximumFractionDigits: 8
+	});
+}));
+// crates/gateway-api/admin-ui/src/auth-profiles.ts
 function profileRow(profile = {}, bindings = []) {
 	const id = `profile-${++slot}`;
 	const entra = profile.entra || {};
@@ -23158,8 +23468,7 @@ var init_auth_profiles = __esmMin((() => {
 	escape$1 = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#039;");
 	slot = 0;
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/monitoring.ts
+// crates/gateway-api/admin-ui/src/monitoring.ts
 function keyLifecycle(key, now = Date.now()) {
 	if (key.revoked_at) return "revoked";
 	if (key.disabled) return "disabled";
@@ -23229,8 +23538,7 @@ async function fetchComplete(path, options = {}, { timeoutMs = 8e3, signal } = {
 	}
 }
 var init_monitoring = __esmMin((() => {}));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/traffic.ts
+// crates/gateway-api/admin-ui/src/traffic.ts
 function parseTrafficFrames(buffer) {
 	const frames = buffer.replace(/\r\n/g, "\n").split("\n\n");
 	const remainder = frames.pop() || "";
@@ -23752,8 +24060,7 @@ function mountTraffic({ content, api, headers, esc, attr, table, badge, time, ro
 	};
 }
 var init_traffic = __esmMin((() => {}));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/monitoring-visuals.ts
+// crates/gateway-api/admin-ui/src/monitoring-visuals.ts
 function chartColor(lightColor, darkToken) {
 	return (context) => {
 		const document = context?.chart?.canvas?.ownerDocument ?? globalThis.document;
@@ -24089,8 +24396,7 @@ var init_monitoring_visuals = __esmMin((() => {
 	measured$1 = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
 	metricNumber = (value) => measured$1(value) ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : "—";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/gateway-status.ts
+// crates/gateway-api/admin-ui/src/gateway-status.ts
 function gatewayStatusPath(instanceId = "all", windowSeconds = 60) {
 	return `/admin-ui/admin/gateway/status?${new URLSearchParams({
 		instance_id: String(instanceId),
@@ -24533,8 +24839,7 @@ var init_gateway_status = __esmMin((() => {
 	count$1 = (value) => number(value) ? value.toLocaleString() : "Unknown";
 	windowLabel$1 = (seconds) => `${seconds / 60} min`;
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/catalog-visuals.ts
+// crates/gateway-api/admin-ui/src/catalog-visuals.ts
 function catalogCredentialState(row) {
 	if (row.provider === "azure-foundry" && ["workload_identity", "managed_identity"].includes(row.foundry?.method)) return {
 		label: "Azure identity",
@@ -24799,8 +25104,7 @@ function routeCatalogInsights(openaiRoutes, anthropicRoutes, services, identitie
 	};
 }
 var init_catalog_visuals = __esmMin((() => {}));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/governance-visuals.ts
+// crates/gateway-api/admin-ui/src/governance-visuals.ts
 function keyGovernanceSnapshot(keys, layers, now = Date.now()) {
 	const states = keys.map((key) => keyLifecycle(key, now));
 	const active = keys.filter((key, index) => ["active", "non-expiring"].includes(states[index]));
@@ -25089,8 +25393,7 @@ function settingsGovernanceSnapshot(studio, auth) {
 var init_governance_visuals = __esmMin((() => {
 	init_monitoring();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/insights.ts
+// crates/gateway-api/admin-ui/src/design-system/insights.ts
 function insightStrip(items, { label = "At a glance" } = {}) {
 	return `<div class="insight-strip" role="list" aria-label="${escape(label)}"><span class="insight-eyebrow" aria-hidden="true">${escape(label)}</span>${items.map((item) => `<div class="insight-metric ${tone(item.tone)}" role="listitem"><span class="insight-icon" aria-hidden="true"><i class="ti ti-${icon(item.icon)}"></i></span><div><span class="insight-label"><span>${escape(item.label)}</span>${help(item.label, item.detail)}</span><strong>${escape(valueText(item.value))}</strong>${item.detail ? `<small class="sr-only">${escape(item.detail)}</small>` : ""}</div></div>`).join("")}</div>`;
 }
@@ -25115,8 +25418,7 @@ var init_insights = __esmMin((() => {
 	valueText = (value) => value == null || typeof value === "number" && !Number.isFinite(value) ? "—" : typeof value === "number" ? value.toLocaleString(void 0, { maximumFractionDigits: 2 }) : String(value);
 	help = (label, detail) => detail ? `<button type="button" class="help-trigger insight-help" aria-label="About ${escape(label)}" data-help-tooltip="${escape(detail)}"><i class="ti ti-info-circle" aria-hidden="true"></i></button>` : "";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/owner-visuals.ts
+// crates/gateway-api/admin-ui/src/owner-visuals.ts
 function ownerCatalogInsights(items, kind) {
 	const projects = kind === "projects";
 	let metrics;
@@ -25313,8 +25615,7 @@ var init_owner_visuals = __esmMin((() => {
 	totalLinks = (project) => Array.isArray(project?.service_names) ? project.service_names.length : null;
 	windowLabel = (range) => range === "6h" ? "Last 6 hours" : range === "24h" ? "Last 24 hours" : "Last 7 days";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/guidance-content.ts
+// crates/gateway-api/admin-ui/src/design-system/guidance-content.ts
 /** Essential units and neutral/zero behavior stay beside the control. */
 function fieldSummary(name, context) {
 	if (context === "policy" && policyEssentials[name]) return policyEssentials[name];
@@ -25613,8 +25914,7 @@ var init_guidance_content = __esmMin((() => {
 		"TTL": "Time to live: how long a cached entry remains valid before refresh or expiration."
 	};
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/guidance.ts
+// crates/gateway-api/admin-ui/src/design-system/guidance.ts
 function tooltipPosition(anchor, size, viewport) {
 	const margin = 8;
 	const left = Math.max(margin, Math.min(anchor.left, viewport.width - size.width - margin));
@@ -25826,8 +26126,7 @@ var init_guidance = __esmMin((() => {
 	controls = "input:not([type=\"hidden\"]), select, textarea";
 	terms = "th, .stat > span:first-child, .posture-fact > span:first-child, .investigation-metrics > div > span:first-child, .investigation-facts dt";
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/policy-visuals.ts
+// crates/gateway-api/admin-ui/src/policy-visuals.ts
 function policyLayerCards(rows, guardrailSummary, formatTime = (value) => String(value || "Not recorded")) {
 	if (!rows.length) return "<div class=\"monitor-empty\"><i class=\"ti ti-stack-2\" aria-hidden=\"true\"></i><span>No inherited layers configured. Direct key policy still applies.</span></div>";
 	return `<div class="policy-layer-list" role="list" aria-label="Saved policy layers">${rows.map((layer) => {
@@ -25878,8 +26177,7 @@ var init_policy_visuals = __esmMin((() => {
 	};
 	value = (item) => Array.isArray(item) ? item.length ? item.join(", ") : "No added restriction" : typeof item === "boolean" ? item ? "Permitted at this layer" : "Denied at this layer" : String(item);
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/investigation.ts
+// crates/gateway-api/admin-ui/src/investigation.ts
 function routingModeLabel(diagnostics) {
 	switch (diagnostics?.routing_mode) {
 		case "managed_by_gateway": return "Gateway managed";
@@ -26158,11 +26456,9 @@ function bindInvestigationActions(root, requestId) {
 	}));
 }
 var init_investigation = __esmMin((() => {}));
-//#endregion
-//#region node_modules/@tabler/icons-webfont/dist/tabler-icons.min.css
+// node_modules/@tabler/icons-webfont/dist/tabler-icons.min.css
 var init_tabler_icons_min = __esmMin((() => {}));
-//#endregion
-//#region node_modules/@kurkle/color/dist/color.esm.js
+// node_modules/@kurkle/color/dist/color.esm.js
 /*!
 * @kurkle/color v0.3.4
 * https://github.com/kurkle/color#readme
@@ -26752,8 +27048,7 @@ var init_color_esm = __esmMin((() => {
 		}
 	};
 }));
-//#endregion
-//#region node_modules/chart.js/dist/chunks/helpers.dataset.js
+// node_modules/chart.js/dist/chunks/helpers.dataset.js
 /*!
 * Chart.js v4.5.1
 * https://www.chartjs.org
@@ -29056,8 +29351,7 @@ var init_helpers_dataset = __esmMin((() => {
 		};
 	};
 }));
-//#endregion
-//#region node_modules/chart.js/dist/chart.js
+// node_modules/chart.js/dist/chart.js
 /*!
 * Chart.js v4.5.1
 * https://www.chartjs.org
@@ -38920,8 +39214,7 @@ var init_chart = __esmMin((() => {
 		scales
 	];
 }));
-//#endregion
-//#region node_modules/chart.js/auto/auto.js
+// node_modules/chart.js/auto/auto.js
 var auto_default;
 var init_auto = __esmMin((() => {
 	init_chart();
@@ -38929,8 +39222,7 @@ var init_auto = __esmMin((() => {
 	Chart.register(...registerables);
 	auto_default = Chart;
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/view-meta.ts
+// crates/gateway-api/admin-ui/src/design-system/view-meta.ts
 function metaForView(view) {
 	return viewMeta[view] ?? {
 		title: view ? view[0].toUpperCase() + view.slice(1) : "Overview",
@@ -39033,8 +39325,7 @@ var init_view_meta = __esmMin((() => {
 		}
 	};
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/templates.ts
+// crates/gateway-api/admin-ui/src/design-system/templates.ts
 function filterPanel(title, formMarkup) {
 	return panel(title, `<form data-filter-form>${formMarkup}</form>`);
 }
@@ -39065,8 +39356,7 @@ function reasonForDiffRow(row) {
 var init_templates = __esmMin((() => {
 	init_components();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system/index.ts
+// crates/gateway-api/admin-ui/src/design-system/index.ts
 function applyViewChrome(view) {
 	const meta = metaForView(view);
 	document.documentElement.dataset.viewDomain = meta.domain.toLowerCase();
@@ -39084,13 +39374,11 @@ var init_design_system$1 = __esmMin((() => {
 	init_insights();
 	init_workflows();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/design-system.ts
+// crates/gateway-api/admin-ui/src/design-system.ts
 var init_design_system = __esmMin((() => {
 	init_design_system$1();
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/main.ts
+// crates/gateway-api/admin-ui/src/main.ts
 var main_exports = /* @__PURE__ */ __exportAll({});
 function token() {
 	return sessionStorage.getItem(tokenKey);
@@ -39579,6 +39867,7 @@ async function refresh({ focus = false } = {}) {
 	destroyOverviewChart();
 	destroyOwnerDashboardChart();
 	usageLoad?.charts?.forEach((chart) => chart?.destroy());
+	usageLoad?.disposeCustomerSpend?.();
 	if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
 	applyViewChrome(view);
 	document.querySelector("#page-actions").replaceChildren();
@@ -42335,6 +42624,7 @@ async function loadUsage(event) {
 	event?.preventDefault();
 	usageLoad?.controllers.forEach((controller) => controller.abort());
 	usageLoad?.charts?.forEach((chart) => chart?.destroy());
+	usageLoad?.disposeCustomerSpend?.();
 	const generation = ++usageGeneration;
 	const root = document.querySelector("#usage-results");
 	if (!root) return;
@@ -42386,9 +42676,19 @@ async function loadUsage(event) {
     <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
     ${usageChartsShell()}
     ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
+    ${query.get("key_id") ? "<div data-usage-litellm-customers data-react-ui></div>" : "<p class=\"help\">Select a virtual key and apply filters to view LiteLLM reported spend and customer costs for its mapped credential.</p>"}
     ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
 	root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
+	const customerSpend = root.querySelector("[data-usage-litellm-customers]");
+	if (customerSpend) usageLoad.disposeCustomerSpend = mountLiteLlmCustomerSpend(customerSpend, {
+		keyId: query.get("key_id"),
+		from: query.get("from"),
+		to: query.get("to"),
+		api,
+		onExport: (dates, signal) => downloadCustomerUsageExport(query.get("key_id"), dates, signal),
+		onCopyExport: (dates) => copyCustomerUsageExport(query.get("key_id"), dates)
+	});
 	const primaryReads = [loadUsageSummary(), loadUsageSection("events")];
 	loadUsageVisuals();
 	tabulateUsage(root);
@@ -42928,6 +43228,37 @@ async function downloadAllUsageExport(format, baseQuery) {
 		throw error;
 	} finally {
 		viewController.signal.removeEventListener("abort", abort);
+	}
+}
+function customerUsageExportPath(keyId, dates) {
+	return `/admin-ui/admin/keys/${encodeURIComponent(keyId)}/litellm-customer-spend/export.csv?${new URLSearchParams(dates)}`;
+}
+async function copyCustomerUsageExport(keyId, dates) {
+	const quotedUrl = `'${`${location.origin}${customerUsageExportPath(keyId, dates)}`.replaceAll("'", "'\\''")}'`;
+	await navigator.clipboard.writeText(`curl --fail --show-error --remove-on-error -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" ${quotedUrl} --output relayna-customer-usage.csv`);
+}
+async function downloadCustomerUsageExport(keyId, dates, signal) {
+	if (!window.showSaveFilePicker) throw new Error("Streaming file downloads require a supported browser; use Copy export curl.");
+	const file = await window.showSaveFilePicker({
+		suggestedName: `relayna-customer-usage-${dates.start_date}-${dates.end_date}.csv`,
+		types: [{
+			description: "Customer usage CSV",
+			accept: { "text/csv": [".csv"] }
+		}]
+	});
+	const requestSignal = AbortSignal.any([signal, viewController.signal]);
+	requestSignal.throwIfAborted();
+	const writable = await file.createWritable();
+	try {
+		const response = await fetch(customerUsageExportPath(keyId, dates), {
+			headers: usageExportHeaders(),
+			signal: requestSignal
+		});
+		if (!response.ok || !response.body) throw new Error("Customer export unavailable");
+		await response.body.pipeTo(writable, { signal: requestSignal });
+	} catch (error) {
+		await writable.abort().catch(() => {});
+		throw error;
 	}
 }
 async function loadTaskUsage(event) {
@@ -45390,6 +45721,7 @@ var init_main = __esmMin((() => {
 	init_key_route_bindings();
 	init_mount_identity_editor();
 	init_user_token_forwarding();
+	init_litellm_customer_spend();
 	init_auth_profiles();
 	init_monitoring();
 	init_traffic();
@@ -45571,6 +45903,7 @@ var init_main = __esmMin((() => {
 			"login-form",
 			"usage-form",
 			"usage-export-form",
+			"litellm-customer-spend-form",
 			"traffic-filters",
 			"task-usage-form",
 			"debug-bundle-form",
@@ -45661,12 +45994,10 @@ var init_main = __esmMin((() => {
 		});
 	}));
 }));
-//#endregion
-//#region crates/gateway-api/admin-ui/src/entry.tsx
+// crates/gateway-api/admin-ui/src/entry.tsx
 var import_client = require_client();
 var import_react_dom = /* @__PURE__ */ __toESM(require_react_dom(), 1);
 initializeThemePreference();
 var root = (0, import_client.createRoot)(document.getElementById("root"));
-(0, import_react_dom.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ConsoleShell, {})));
+(0, import_react_dom.flushSync)(() => root.render(/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ConsoleShell, {})));
 __vitePreload(() => Promise.resolve().then(() => (init_main(), main_exports)), void 0);
-//#endregion

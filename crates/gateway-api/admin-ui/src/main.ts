@@ -5,6 +5,7 @@ import { mountRouteConfiguration } from "./react/route-configuration";
 import { mountKeyRouteBindings } from "./react/key-route-bindings";
 import { mountIdentityEditor } from "./react/mount-identity-editor";
 import { mountUserTokenForwarding } from "./react/user-token-forwarding";
+import { mountLiteLlmCustomerSpend } from "./react/litellm-customer-spend";
 import { profileFields, profilesFromForm, showProfileError, profileKeyOptions } from "./auth-profiles";
 import { keyLifecycle, reliability, fetchComplete } from "./monitoring";
 import { mountTraffic, trafficDuration } from "./traffic";
@@ -694,6 +695,7 @@ async function refresh({ focus = false } = {}) {
   destroyOverviewChart();
   destroyOwnerDashboardChart();
   usageLoad?.charts?.forEach(chart => chart?.destroy());
+  usageLoad?.disposeCustomerSpend?.();
   if (state.view !== "service-dashboard" && state.view !== "project-dashboard") ownerDashboardGeneration += 1;
   applyViewChrome(view);
   document.querySelector("#page-actions").replaceChildren();
@@ -3207,6 +3209,7 @@ async function loadUsage(event) {
   event?.preventDefault();
   usageLoad?.controllers.forEach((controller) => controller.abort());
   usageLoad?.charts?.forEach(chart => chart?.destroy());
+  usageLoad?.disposeCustomerSpend?.();
   const generation = ++usageGeneration;
   const root = document.querySelector("#usage-results");
   if (!root) return;
@@ -3228,9 +3231,16 @@ async function loadUsage(event) {
     <div data-usage-summary aria-busy="true">${emptyState("Loading usage summary…")}</div>
     ${usageChartsShell()}
     ${query.get("key_id") ? `<p><button type="button" data-usage-litellm-spend>View LiteLLM reported spend</button> <span class="help">Current mapped-key counter · independent of date filters</span></p>` : ""}
+    ${query.get("key_id") ? '<div data-usage-litellm-customers data-react-ui></div>' : '<p class="help">Select a virtual key and apply filters to view LiteLLM reported spend and customer costs for its mapped credential.</p>'}
     ${sections.map(([section, title]) => `<h4>${esc(title)}</h4><div data-usage-section="${attr(section)}">${emptyState("Select this section to load it.")}</div>`).join("")}
   `;
   root.querySelector("[data-usage-litellm-spend]")?.addEventListener("click", handleAsync(() => showLiteLlmSpend(query.get("key_id"))));
+  const customerSpend = root.querySelector("[data-usage-litellm-customers]");
+  if (customerSpend) usageLoad.disposeCustomerSpend = mountLiteLlmCustomerSpend(customerSpend, {
+    keyId: query.get("key_id"), from: query.get("from"), to: query.get("to"), api,
+    onExport: (dates, signal) => downloadCustomerUsageExport(query.get("key_id"), dates, signal),
+    onCopyExport: (dates) => copyCustomerUsageExport(query.get("key_id"), dates),
+  });
   // Summary and rows settle independently. Neither failure replaces the other.
   // Reserve their places before restored Show all tabs enqueue optional reads.
   const primaryReads = [loadUsageSummary(), loadUsageSection("events")];
@@ -3726,6 +3736,32 @@ async function downloadAllUsageExport(format, baseQuery) {
     throw error;
   } finally {
     viewController.signal.removeEventListener("abort", abort);
+  }
+}
+
+function customerUsageExportPath(keyId, dates) {
+  return `/admin-ui/admin/keys/${encodeURIComponent(keyId)}/litellm-customer-spend/export.csv?${new URLSearchParams(dates)}`;
+}
+
+async function copyCustomerUsageExport(keyId, dates) {
+  const url = `${location.origin}${customerUsageExportPath(keyId, dates)}`;
+  const quotedUrl = `'${url.replaceAll("'", "'\\''")}'`;
+  await navigator.clipboard.writeText(`curl --fail --show-error --remove-on-error -H "Authorization: Bearer $GATEWAY_OPERATOR_TOKEN" ${quotedUrl} --output relayna-customer-usage.csv`);
+}
+
+async function downloadCustomerUsageExport(keyId, dates, signal) {
+  if (!window.showSaveFilePicker) throw new Error("Streaming file downloads require a supported browser; use Copy export curl.");
+  const file = await window.showSaveFilePicker({ suggestedName: `relayna-customer-usage-${dates.start_date}-${dates.end_date}.csv`, types: [{ description: "Customer usage CSV", accept: { "text/csv": [".csv"] } }] });
+  const requestSignal = AbortSignal.any([signal, viewController.signal]);
+  requestSignal.throwIfAborted();
+  const writable = await file.createWritable();
+  try {
+    const response = await fetch(customerUsageExportPath(keyId, dates), { headers: usageExportHeaders(), signal: requestSignal });
+    if (!response.ok || !response.body) throw new Error("Customer export unavailable");
+    await response.body.pipeTo(writable, { signal: requestSignal });
+  } catch (error) {
+    await writable.abort().catch(() => {});
+    throw error;
   }
 }
 
@@ -5704,7 +5740,7 @@ function clearDirtyForms() {
 }
 document.addEventListener("input", (event) => {
   const form = event.target.closest?.("form");
-  if (!form || ["login-form", "usage-form", "usage-export-form", "traffic-filters", "task-usage-form", "debug-bundle-form", "audit-form", "policy-sim-form"].includes(form.id)) return;
+  if (!form || ["login-form", "usage-form", "usage-export-form", "litellm-customer-spend-form", "traffic-filters", "task-usage-form", "debug-bundle-form", "audit-form", "policy-sim-form"].includes(form.id)) return;
   form.dataset.dirty = "true";
 });
 window.addEventListener("beforeunload", (event) => {
