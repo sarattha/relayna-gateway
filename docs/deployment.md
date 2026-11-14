@@ -10,6 +10,28 @@ Published v1.0.1 images retain their original contents. Use the current released
 image; see the
 [triage and verification procedure](runtime-image-security.md).
 
+## Upgrade to 1.3.0
+
+Version 1.3.0 adds customer-level LiteLLM reporting and CSV export. Public
+v1.2.0 routes, request accounting, budgets, key formats, database schemas and
+Redis state remain compatible; no migration or state reset is required.
+
+1. After [release validation](benchmarks/v1.3.0.md) and publication, drain and
+   replace replicas with `ghcr.io/sarattha/relayna-gateway:1.3.0`, retaining
+   database, Redis, secrets and existing configuration.
+2. Follow the dedicated [customer usage guide](litellm-customer-usage.md) to
+   enable a LiteLLM credential mapping and upstream analytics permissions.
+   LiteLLM must already record customer IDs; Gateway does not create or mirror
+   its customer directory.
+3. Check Usage & cost with a mapped key, an exact customer ID and explicit UTC
+   dates. Test CSV export with an operator authorized for `usage:export`.
+4. Keep existing admission limits. Customer reports use bounded page/batch
+   reads, but their latency depends on LiteLLM's database and availability.
+
+Rollback to v1.2.0 needs no data conversion and removes the new report/export
+endpoints and UI. Dependency updates include a manifest-only compatibility
+backport for the optional SQLite driver; Gateway continues using PostgreSQL.
+
 ## Upgrade to 1.2.0
 
 Version 1.2.0 adds bounded authentication, reusable secret proofs and optional

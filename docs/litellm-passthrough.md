@@ -578,5 +578,5 @@ For managed requests using a mapped LiteLLM credential, **Usage & cost** can als
 show LiteLLM costs per recorded customer ID. Select a virtual key, then load the
 **LiteLLM customer costs** table for explicit UTC days. This reads the mapped
 key's daily activity from LiteLLM and includes any other traffic using that
-credential. See [cost per customer](admin-portal.md#litellm-cost-per-customer)
+credential. See [customer usage and costs](litellm-customer-usage.md)
 for permissions, customer ID examples and date-range semantics.

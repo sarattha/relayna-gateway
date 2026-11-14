@@ -20583,7 +20583,7 @@ function ConsoleShell() {
 										children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 											className: "version-indicator",
 											"aria-label": "Current Relayna Gateway version",
-											children: "v1.2.0"
+											children: "v1.3.0"
 										})
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("small", {

@@ -12,6 +12,7 @@ establish a new capacity result.
 
 | Version | Runtime architecture | Coverage | Results |
 | --- | --- | --- | --- |
+| v1.3.0 | Native amd64 planned | Fresh six-size study pending; version bump blocked from merge/release | [Validation status](v1.3.0.md) |
 | v1.2.0 | Native amd64, separate hosted runners | Corrected runtime: 254 fresh-pod trials; six sizes, three resource-stable confirmations each; failures and earlier attempts retained | [Versioned results](v1.2.0.md) |
 | v1.0.2 | Native amd64 partial runs | Owner waived completion; no completed six-size resource study or new capacity claim | [Validation and waiver](v1.0.2.md) |
 | v1.0.1 | Native amd64, separate hosted runners | 212 fresh-pod trials; six sizes, three clean confirmations each; finite bounds and retained OOMs | [Versioned results](v1.0.1.md) |
