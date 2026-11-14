@@ -52,6 +52,13 @@ jobs:
           path: target/docs-release-assets/v1.2.0
           persist-credentials: false
 
+      - name: Check out archived v1.3.0 documentation assets
+        uses: actions/checkout@v4
+        with:
+          ref: cc5cdf9708fc947064068cfc9a86904571ecca0b
+          path: target/docs-release-assets/v1.3.0
+          persist-credentials: false
+
       - name: Verify gateway documentation anchors
         run: |
           grep -q "Relayna Gateway" README.md
@@ -84,6 +91,9 @@ jobs:
           (cd target/docs-release-assets/v1.2.0 && sha256sum -c gateway-1.2.0-evidence-SHA256SUMS)
           mkdir -p site/assets/releases/v1.2.0
           cp target/docs-release-assets/v1.2.0/* site/assets/releases/v1.2.0/
+          (cd target/docs-release-assets/v1.3.0 && sha256sum -c gateway-1.3.0-evidence-SHA256SUMS)
+          mkdir -p site/assets/releases/v1.3.0
+          cp target/docs-release-assets/v1.3.0/* site/assets/releases/v1.3.0/
 
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -14,12 +14,18 @@ limitations. Existing v1.2.0 proxy, usage and budget contracts remain supported;
 no PostgreSQL or Redis migration is required. See the
 [upgrade guide](deployment.md#upgrade-to-130).
 
-**Release validation is pending.** The [1.3.0 validation record](benchmarks/v1.3.0.md)
-tracks fresh native adaptive searches for 5, 10, 20, 40, 80 and 100 MiB JSON,
-three fresh-pod confirmations per selected setting and publication of original
-HTML/JSON/CSV evidence. Keep the version bump unmerged and do not tag or publish
-until these gates and final-head CI/review requirements pass. Historical
-results and synthetic UI/export tests do not qualify this runtime.
+The [1.3.0 validation record](benchmarks/v1.3.0.md) now contains **207 fresh
+native amd64 trials** across 5, 10, 20, 40, 80 and 100 MiB JSON, with three
+stable confirmations per selected setting. Audited HTML/JSON/CSV and original
+raw evidence are preserved in an immutable archive and wired into documentation
+hosting. The 10 MiB study establishes a repeated resource edge; the other sizes
+are tested lower bounds with intermittent adjacent OOMs. Production headroom
+is required, and lost denial replies remain explicit.
+
+**The controlled same-runner v1.2.0 comparison is still pending.** Keep this
+version bump unmerged and do not tag or publish until its result/evidence and
+final-head CI/review requirements pass. Synthetic customer UI/export tests do
+not replace release validation.
 
 ## Earlier releases
 

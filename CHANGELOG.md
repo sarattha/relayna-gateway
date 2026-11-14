@@ -41,10 +41,15 @@ All notable changes to Relayna Gateway are documented in this file.
 
 ### Release validation
 
-- Fresh six-size native adaptive body-admission validation is pending. The
-  version bump must not merge or be tagged/published until execution, evidence
-  publication and the [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.3.0/)
-  are complete. Synthetic million-row export checks do not replace this gate.
+- Complete 207 fresh native amd64 adaptive body-admission trials across all
+  six sizes, with three stable confirmations per selected setting. Preserve
+  audited HTML/JSON/CSV, provenance, failed trials and checksums in an immutable
+  documentation archive. The 10 MiB setting establishes a repeated resource
+  edge; other sizes remain tested lower bounds requiring production headroom.
+- The controlled same-runner comparison with v1.2.0 remains pending. Do not
+  merge, tag or publish until its result/evidence and final-head CI/reviews
+  are complete. See the [versioned validation record](https://sarattha.github.io/relayna-gateway/benchmarks/v1.3.0/).
+  Synthetic million-row export checks do not replace this gate.
 
 ## 1.2.0 - 2026-11-06
 
