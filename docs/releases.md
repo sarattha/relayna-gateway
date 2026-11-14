@@ -241,6 +241,16 @@ together and run the verification stack when upgrading the compiler. This
 avoids changing the required lint baseline whenever the stable channel moves.
 
 1. Update workspace crate versions.
+
+   At the next version bump after 1.3.0, and every bump until removal, recheck
+   the temporary `sqlx-sqlite` backport against published SQLx releases. Record
+   the version checked and the retain/remove decision in the release PR. Once
+   a compatible release accepts patched SQLite bindings, upgrade and remove
+   the vendor directory, Cargo patch/exclusion and dedicated verification
+   references; regenerate the lockfile and pass the full dependency audit and
+   Gateway tests. The exact cleanup procedure and ownership are documented in
+   [the patch maintenance note](https://github.com/sarattha/relayna-gateway/blob/main/vendor/sqlx-sqlite/README.relayna.md#required-review-at-the-next-gateway-version).
+
 2. Update `CHANGELOG.md` with release notes.
 3. Run the full verification stack:
 

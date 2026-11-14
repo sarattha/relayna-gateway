@@ -18,6 +18,27 @@ main accepts versions below 0.40.0. This narrow dependency backport avoids an
 unrelated migration of the PostgreSQL API. Remove the patch when a released
 SQLx driver accepts fixed SQLite bindings.
 
+## Required review at the next Gateway version
+
+Owner: Relayna Gateway maintainers. Recheck this temporary patch at the next
+Gateway version bump after 1.3.0, and at every subsequent bump until removed.
+Record the SQLx release checked and the retain/remove decision in the release PR.
+
+When a compatible published SQLx release accepts SQLite bindings that pass the
+dependency audit:
+
+1. Upgrade SQLx and remove `vendor/sqlx-sqlite/`, its workspace exclusion and
+   `[patch.crates-io]` entry.
+2. Remove the dedicated driver-test commands from local verification and CI,
+   plus obsolete vendor-specific ignore/attribute entries. Search the repository
+   for `vendor/sqlx-sqlite` to find all cleanup references.
+3. Regenerate `Cargo.lock` and run the full Gateway verification stack, including
+   the dependency audit and PostgreSQL-backed tests. Confirm SQLite remains
+   outside Gateway's runtime feature graph.
+
+If a suitable upstream release is unavailable, retain the patch and document
+the blocker for the next version's review. This patch is not permanent vendoring.
+
 `UPSTREAM.json` records the original package archive, its SHA-256 checksum,
 Git revision, and the hashes of all unchanged Rust source files.
 
