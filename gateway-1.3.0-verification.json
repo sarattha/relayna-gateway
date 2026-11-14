@@ -1,0 +1,10 @@
+{
+  "tested_head": "2985a614aa3afda44f32975d90b34f40acb583ce",
+  "measured_runtime": "4d25895cb8d45ad24a6978d234f3bb7f96b2b177",
+  "runtime_changes_since_measurement": false,
+  "ci_push": "https://github.com/sarattha/relayna-gateway/actions/runs/43572940871",
+  "ci_pull_request": "https://github.com/sarattha/relayna-gateway/actions/runs/43572944884",
+  "ci_validation": "All validation jobs passed, including production runtime image gates and ten-minute monitoring smoke. Docs deploy skipped for PR.",
+  "local": "Full required verification, workspace build, npm build/test/typecheck and 72 React tests (100% lines/statements/functions; 99.78% branches), metadata and strict docs passed. Guardrail auth tests: 10 stress iterations each, 20 executions passed.",
+  "later_changes": "SQLx maintenance documentation and Nextest scheduling only; production source, Cargo manifest/lockfile and Dockerfile unchanged."
+}
